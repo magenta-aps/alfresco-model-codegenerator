@@ -65,6 +65,7 @@ public class SaxModuleParser extends DefaultHandler {
     public static final String TYPES_TAG = "types";
     public static final String TYPE_TAG = "type";
     public static final String MANDATORY_ASPECTS_TAG = "mandatory-aspects";
+    public static final String PARENT_TAG = "parent";
 
     public static final String ASPECTS_TAG = "aspects";
     public static final String ASPECT_TAG = "aspect";
@@ -76,6 +77,8 @@ public class SaxModuleParser extends DefaultHandler {
     public static final String CHILD_ASSOCIATION_TAG = "child-association";
     public static final String ASSOCIATION_TAG = "association";
 
+    public static final String ASPECT_POSTFIX = "Class";
+    
     private final Log log;
     private final List<String> packagePrefixes;
     private final String sourceDir;
@@ -97,12 +100,15 @@ public class SaxModuleParser extends DefaultHandler {
 
     private StringBuilder stringBuilder;
 
-    private TypeSpec.Builder javaTypeBuilder;
+    private TypeSpec.Builder javaInterfaceBuilder;
+    private TypeSpec.Builder javaClassBuilder;
     private List<String> javaTypePackages;
-
+    private ClassName parent;
+    
     String fieldClass;
-//    ParameterSpec.Builder parameterBuilder;
     String fieldName;
+
+    private Map<String, TypeSpec> fqcnToTypes = new HashMap<>();
 
     public SaxModuleParser(Log log, List<String> packagePrefixes, String sourceDir) {
         this.log = log;
@@ -175,6 +181,13 @@ public class SaxModuleParser extends DefaultHandler {
 
                     }
                     break;
+                case PARENT_TAG:
+                    if (handlingTypes) {
+                        startTypeParent(uri, localName, qName, attributes);
+                    } else if (handlingAspects) {
+                        startAspectParent(uri, localName, qName, attributes);
+                    }
+                    break;
                 case PROPERTY_TAG:
                     if (handlingTypes) {
                         startTypeProperty(uri, localName, qName, attributes);
@@ -242,9 +255,8 @@ public class SaxModuleParser extends DefaultHandler {
         javaTypePackages = getPackages(classNamespace);
         String packageName = getPackage(javaTypePackages);
         ClassName clazz = ClassName.get(packageName, className);
-        javaTypeBuilder = TypeSpec.classBuilder(clazz);
-        
-        
+        javaClassBuilder = TypeSpec.classBuilder(clazz);
+
 //        FieldSpec nodeRefField = FieldSpec.builder(String.class, nodeRefFieldName, Modifier.PROTECTED).build();
 //        FieldSpec nodeIDField = FieldSpec.builder(String.class, nodeIDFieldName, Modifier.PROTECTED).build();
 //        javaTypeBuilder.addField(nodeRefField);
@@ -255,6 +267,10 @@ public class SaxModuleParser extends DefaultHandler {
 //                .addParameter(String.class, nodeRefField.name)
 //                .addParameter(String.class, nodeIDField.name)
 //                .addCode("$[this.$L=$L$];$W$[this.$L=$L$];$W", nodeRefField.name, nodeRefField.name, nodeIDField.name, nodeIDField.name).build());
+    }
+    
+    protected void startTypeParent(String uri, String localName, String qName, org.xml.sax.Attributes attributes){
+        stringBuilder = new StringBuilder();
     }
 
     protected void startTypeMandatoryAspect(String uri, String localName, String qName, org.xml.sax.Attributes attributes) {
@@ -290,7 +306,33 @@ public class SaxModuleParser extends DefaultHandler {
     }
 
     protected void startAspect(String uri, String localName, String qName, org.xml.sax.Attributes attributes) {
-        
+        String aspectName = attributes.getValue("name");
+        log.info("AspectName " + aspectName);
+        String[] type = aspectName.split(":");
+        if (type.length != 2) {
+            //I'm not sure if this case ever happens. So a warn log is here for awareness.
+            log.warn(aspectName + " did not contain a prefix");
+            return;
+        }
+        String classPrefix = type[0];
+        String className = capitalize(type[1]);
+        String classNamespace = resolveNamespaceByPrefix(classPrefix);
+
+        if (classNamespace == null) {
+            log.error("Found type not matched by namespace: " + aspectName);
+        }
+
+        javaTypePackages = getPackages(classNamespace);
+        String packageName = getPackage(javaTypePackages);
+        ClassName aspect = ClassName.get(packageName, className);
+        ClassName aspectImplementation = ClassName.get(packageName, className + ASPECT_POSTFIX);
+        javaInterfaceBuilder = TypeSpec.interfaceBuilder(aspect);
+        javaClassBuilder = TypeSpec.classBuilder(aspectImplementation);
+
+    }
+    
+    protected void startAspectParent(String uri, String localName, String qName, org.xml.sax.Attributes attributes){
+        startTypeParent(uri, localName, qName, attributes);
     }
 
     protected void startAspectMandatoryAspect(String uri, String localName, String qName, org.xml.sax.Attributes attributes) {
@@ -298,7 +340,7 @@ public class SaxModuleParser extends DefaultHandler {
     }
 
     protected void startAspectProperty(String uri, String localName, String qName, org.xml.sax.Attributes attributes) {
-
+        startTypeProperty(uri, localName, qName, attributes);
     }
 
     protected void startAspectChildAssociation(String uri, String localName, String qName, org.xml.sax.Attributes attributes) {
@@ -363,6 +405,13 @@ public class SaxModuleParser extends DefaultHandler {
 
                     }
                     break;
+                case PARENT_TAG:
+                    if (handlingTypes) {
+                        endTypeParent(uri, localName, qName);
+                    } else if (handlingAspects) {
+                        endAspectParent(uri, localName, qName);
+                    }
+                    break;
                 case PROPERTY_TAG:
                     if (handlingTypes) {
                         endTypeProperty(uri, localName, qName);
@@ -403,14 +452,17 @@ public class SaxModuleParser extends DefaultHandler {
 
     protected void endType(String uri, String localName, String qName) throws IOException {
         String packageName = getPackage(javaTypePackages);
-        TypeSpec type = javaTypeBuilder.build();
-        log.info("package name :\n" + packageName + " from "+javaTypePackages);
-        log.info("writing type :\n" + type);
+        if(parent != null){
+            javaClassBuilder.superclass(parent);
+        }
+        TypeSpec type = javaClassBuilder.build();
+        log.info("end type :\n" + type);
+
+        fqcnToTypes.put(getFqcn(packageName, type.name), type);
+        parent = null;
+        
         JavaFile javaFile = JavaFile.builder(packageName, type).build();
-
-        //javaFile.writeTo(getOutputPath(sourceDir, javaTypePackages, type.name));
         javaFile.writeTo(new File(sourceDir));
-
     }
 
     protected void endTypeMandatoryAspect(String uri, String localName, String qName) {
@@ -430,18 +482,37 @@ public class SaxModuleParser extends DefaultHandler {
 
         FieldSpec getterToQNameField = FieldSpec.builder(QName.class, fieldName, Modifier.PUBLIC, Modifier.FINAL, Modifier.STATIC).initializer("$T.createQName($S, $S)", QName.class, nameSpace, fieldName).build();
 
-        String methodName = "get" + fieldName.substring(0, 1).toUpperCase() + fieldName.substring(1);
+        String methodName = "get" + "get" + capitalize(fieldName);
         MethodSpec getter = MethodSpec.methodBuilder(methodName).returns(resolveType(nameSpace, classPrefixAndName[1])).addModifiers(Modifier.PUBLIC)
                 .addCode("return null;\n").build(); //return null is placeholder; Should call nodeservice.getProperty(qName) with the node and propertys qName
 
         if (handlingTypes) { //Maybe we can reuse javaTypeBuilder for aspect?
-            javaTypeBuilder.addField(getterToQNameField);
-            javaTypeBuilder.addMethod(getter);
+            javaClassBuilder.addField(getterToQNameField);
+            javaClassBuilder.addMethod(getter);
             log.info("Adding to type\n:" + getterToQNameField + "\n" + getter);
         }
         fieldName = null;
         fieldClass = null;
 
+    }
+    
+    protected void endTypeParent(String uri, String localName, String qName){
+        String parentTag = stringBuilder.toString();
+        stringBuilder = null;
+        
+        String[] type = parentTag.split(":");
+        if (type.length != 2) {
+            //I'm not sure if this case ever happens. So a warn log is here for awareness.
+            log.warn(parentTag + " Parent did not contain a prefix");
+            return;
+        }
+        String parentPrefix = type[0];
+        String parentClassName = type[1];
+        String parentNamespace = resolveNamespaceByPrefix(parentPrefix);
+        List<String> parentPackages = getPackages(parentNamespace);
+        
+        parent = ClassName.get(getPackage(parentPackages), capitalize(parentClassName));
+        
     }
 
     protected void endTypeChildAssociation(String uri, String localName, String qName) {
@@ -452,8 +523,30 @@ public class SaxModuleParser extends DefaultHandler {
 
     }
 
-    protected void endAspect(String uri, String localName, String qName) {
+    protected void endAspect(String uri, String localName, String qName) throws IOException {
+        String packageName = getPackage(javaTypePackages);
+        
+        if(parent != null){
+            javaInterfaceBuilder.addSuperinterface(parent);
+            ClassName parentImplClassName = ClassName.get(parent.packageName(), parent.simpleName()+ASPECT_POSTFIX);
+            javaClassBuilder.superclass(parentImplClassName);
+        }
+        
+        TypeSpec aspect = javaClassBuilder.build();
+        TypeSpec aspectImpl = javaInterfaceBuilder.addSuperinterface(aspect.getClass()).build();
+        log.info("end aspect :\n" + aspect + "\n" + aspectImpl);
 
+        fqcnToTypes.put(getFqcn(packageName, aspect.name), aspect);
+        fqcnToTypes.put(getFqcn(packageName, aspectImpl.name), aspectImpl);
+        parent = null;
+        
+        JavaFile.builder(packageName, aspect).build().writeTo(new File(sourceDir));
+        JavaFile.builder(packageName, aspectImpl).build().writeTo(new File(sourceDir));
+        
+    }
+    
+    protected void endAspectParent(String uri, String localName, String qName) {
+        endTypeParent(uri, localName, qName);
     }
 
     protected void endAspectMandatoryAspect(String uri, String localName, String qName) {
@@ -461,7 +554,31 @@ public class SaxModuleParser extends DefaultHandler {
     }
 
     protected void endAspectProperty(String uri, String localName, String qName) {
+        String[] classPrefixAndName = fieldClass.split(":");
 
+        if (classPrefixAndName.length != 2) {
+            //I'm not sure if this case ever happens. So a warn log is here for awareness.
+            log.warn(fieldClass + " field did not contain a prefix");
+            return;
+        }
+
+        String nameSpace = resolveNamespaceByPrefix(classPrefixAndName[0]);
+
+        FieldSpec getterToQNameField = FieldSpec.builder(QName.class, fieldName, Modifier.PUBLIC, Modifier.FINAL, Modifier.STATIC).initializer("$T.createQName($S, $S)", QName.class, nameSpace, fieldName).build();
+
+        String methodName = "get" + capitalize(fieldName);
+        MethodSpec getter = MethodSpec.methodBuilder(methodName).returns(resolveType(nameSpace, classPrefixAndName[1])).addModifiers(Modifier.PUBLIC)
+                .addCode("return null;\n").build();
+        MethodSpec getterImpl = MethodSpec.methodBuilder(methodName).returns(resolveType(nameSpace, classPrefixAndName[1])).addModifiers(Modifier.PUBLIC)
+                .addCode("return null;\n").build(); //return null is placeholder; Should call nodeservice.getProperty(qName) with the node and propertys qName
+
+        javaInterfaceBuilder.addMethod(getter);
+        javaClassBuilder.addField(getterToQNameField);
+        javaClassBuilder.addMethod(getterImpl);
+        log.info("Adding to type\n:" + getterToQNameField + "\n" + getter);
+
+        fieldName = null;
+        fieldClass = null;
     }
 
     protected void endAspectChildAssociation(String uri, String localName, String qName) {
@@ -567,9 +684,9 @@ public class SaxModuleParser extends DefaultHandler {
     public void unparsedEntityDecl(String name, String publicId, String systemId, String notationName) throws SAXException {
         super.unparsedEntityDecl(name, publicId, systemId, notationName); //To change body of generated methods, choose Tools | Templates.
     }
-    
-    public static String capitalize(String toCapitalize){
-        return toCapitalize.substring(0,1).toUpperCase()+toCapitalize.substring(1);
+
+    public static String capitalize(String toCapitalize) {
+        return toCapitalize.substring(0, 1).toUpperCase() + toCapitalize.substring(1);
     }
 
     protected String resolveNamespaceByPrefix(String prefix) {
@@ -592,11 +709,10 @@ public class SaxModuleParser extends DefaultHandler {
 
         return new File(relativeFileName);
     }
-    
-    protected MethodSpec buildGetter(FieldSpec spec){
-        return MethodSpec.methodBuilder("get"+capitalize(spec.name)).returns(spec.type).addModifiers(Modifier.PUBLIC).addCode("$[return this.$L$];$W", spec.name).build();
+
+    protected MethodSpec buildGetter(FieldSpec spec) {
+        return MethodSpec.methodBuilder("get" + capitalize(spec.name)).returns(spec.type).addModifiers(Modifier.PUBLIC).addCode("$[return this.$L$];$W", spec.name).build();
     }
-    
 
     protected String getPackage(List<String> packages) {
         boolean first = true;
@@ -611,7 +727,10 @@ public class SaxModuleParser extends DefaultHandler {
         return packageString;
     }
 
-    //TODO: Consider using model name as part of package
+    protected String getFqcn(String packageName, String className) {
+        return packageName + "." + className;
+    }
+
     protected List<String> getPackages(String namespaceURI) {
         Scanner uriScanner = new Scanner(namespaceURI).useDelimiter(Pattern.compile("[\\/]"));
         List<String> uriPackages = new LinkedList<>();
@@ -635,12 +754,16 @@ public class SaxModuleParser extends DefaultHandler {
         }
 
         List<String> packages = new ArrayList<>(packagePrefixes);
-        for(String uriPackage : uriPackages){
-            if(uriPackage.substring(0,1).matches("^\\d")){
-                uriPackage = "_"+uriPackage;
+        for (String uriPackage : uriPackages) {
+            if (uriPackage.substring(0, 1).matches("^\\d")) {
+                uriPackage = "_" + uriPackage;
             }
             packages.add(uriPackage.replaceAll("\\.", "_"));
         }
         return packages;
+    }
+
+    public Map<String, TypeSpec> getFqcnToTypes() {
+        return fqcnToTypes;
     }
 }
