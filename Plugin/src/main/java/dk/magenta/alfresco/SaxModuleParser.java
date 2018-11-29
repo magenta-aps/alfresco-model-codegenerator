@@ -76,12 +76,17 @@ public class SaxModuleParser extends DefaultHandler {
     public static final String ASSOCIATIONS_TAG = "associations";
     public static final String CHILD_ASSOCIATION_TAG = "child-association";
     public static final String ASSOCIATION_TAG = "association";
+    public static final String ASSOCIATION_SOURCE_TAG = "source";
+    public static final String ASSOCIATION_TARGET_TAG = "target";
+    public static final String ASSOCIATION_MANDATORY_TAG = "mandatory";
+    public static final String ASSOCIATION_MANY_TAG = "many";
 
     public static final String ASPECT_POSTFIX = "Class";
-    
+
     private final Log log;
     private final List<String> packagePrefixes;
     private final String sourceDir;
+    private final ClassName anchorClass;
     private final String encoding = "UTF-8";
 
     private final Map<String, String> importMappings = new HashMap<>();
@@ -96,6 +101,9 @@ public class SaxModuleParser extends DefaultHandler {
     private boolean handlingProperties = false;
     private boolean handlingMandatoryAspects = false;
     private boolean handlingAssociations = false;
+    private boolean handlingAssociationSource = false;
+    private boolean handlingAssociationTarget = false;
+
     private boolean handlingConstraints = false;
 
     private StringBuilder stringBuilder;
@@ -104,16 +112,22 @@ public class SaxModuleParser extends DefaultHandler {
     private TypeSpec.Builder javaClassBuilder;
     private List<String> javaTypePackages;
     private ClassName parent;
-    
+
     String fieldClass;
     String fieldName;
+    
+    boolean associationSourceMandatory = false;
+    boolean associationSourceMany = false;
+    boolean associationTargetMandatory = false;
+    boolean associationTargetMany = false;
 
     private Map<String, TypeSpec> fqcnToTypes = new HashMap<>();
 
-    public SaxModuleParser(Log log, List<String> packagePrefixes, String sourceDir) {
+    public SaxModuleParser(Log log, List<String> packagePrefixes, String sourceDir, ClassName anchorClass) {
         this.log = log;
         this.packagePrefixes = packagePrefixes;
         this.sourceDir = sourceDir;
+        this.anchorClass = anchorClass;
     }
 
     @Override
@@ -209,6 +223,18 @@ public class SaxModuleParser extends DefaultHandler {
                         startAspectChildAssociation(uri, localName, qName, attributes);
                     }
                     break;
+                case ASSOCIATION_SOURCE_TAG:
+                    handlingAssociationSource = true;
+                    break;
+                case ASSOCIATION_TARGET_TAG:
+                    handlingAssociationTarget = true;
+                    break;
+                case ASSOCIATION_MANY_TAG:
+                    startAssociationMany(uri, localName, qName, attributes);
+                    break;
+                case ASSOCIATION_MANDATORY_TAG:
+                    startAssociationMandatory(uri, localName, qName, attributes);
+                    break;
                 default:
                     if (!handlingConstraints) {
                         log.warn("OOoops. Found unhandled opening tag: URI: " + uri + " localName " + localName);
@@ -255,7 +281,7 @@ public class SaxModuleParser extends DefaultHandler {
         javaTypePackages = getPackages(classNamespace);
         String packageName = getPackage(javaTypePackages);
         ClassName clazz = ClassName.get(packageName, className);
-        javaClassBuilder = TypeSpec.classBuilder(clazz);
+        javaClassBuilder = TypeSpec.classBuilder(clazz).addModifiers(Modifier.PUBLIC);
 
 //        FieldSpec nodeRefField = FieldSpec.builder(String.class, nodeRefFieldName, Modifier.PROTECTED).build();
 //        FieldSpec nodeIDField = FieldSpec.builder(String.class, nodeIDFieldName, Modifier.PROTECTED).build();
@@ -268,13 +294,13 @@ public class SaxModuleParser extends DefaultHandler {
 //                .addParameter(String.class, nodeIDField.name)
 //                .addCode("$[this.$L=$L$];$W$[this.$L=$L$];$W", nodeRefField.name, nodeRefField.name, nodeIDField.name, nodeIDField.name).build());
     }
-    
-    protected void startTypeParent(String uri, String localName, String qName, org.xml.sax.Attributes attributes){
+
+    protected void startTypeParent(String uri, String localName, String qName, org.xml.sax.Attributes attributes) {
         stringBuilder = new StringBuilder();
     }
 
     protected void startTypeMandatoryAspect(String uri, String localName, String qName, org.xml.sax.Attributes attributes) {
-
+        
     }
 
     protected void startTypeProperty(String uri, String localName, String qName, org.xml.sax.Attributes attributes) {
@@ -298,11 +324,35 @@ public class SaxModuleParser extends DefaultHandler {
     }
 
     protected void startTypeChildAssociation(String uri, String localName, String qName, org.xml.sax.Attributes attributes) {
+        String associationName = attributes.getValue("name");
+        log.info("AssociationName " + associationName);
+        String[] associationToken = associationName.split(":");
+        if (associationToken.length != 2) {
+            //I'm not sure if this case ever happens. So a warn log is here for awareness.
+            log.warn(associationName + " did not contain a prefix");
+            return;
+        }
+        String classPrefix = associationToken[0];
+        String className = capitalize(associationToken[1]);
+        String classNamespace = resolveNamespaceByPrefix(classPrefix);
 
+        if (classNamespace == null) {
+            log.error("Found type not matched by namespace: " + associationName);
+        }
+        
+        
     }
 
     protected void startTypeAssociation(String uri, String localName, String qName, org.xml.sax.Attributes attributes) {
+        startTypeChildAssociation(uri, localName, qName, attributes);
+    }
 
+    protected void startAssociationMany(String uri, String localName, String qName, org.xml.sax.Attributes attributes) {
+        stringBuilder = new StringBuilder();
+    }
+
+    protected void startAssociationMandatory(String uri, String localName, String qName, org.xml.sax.Attributes attributes) {
+        startAssociationMany(uri, localName, qName, attributes);
     }
 
     protected void startAspect(String uri, String localName, String qName, org.xml.sax.Attributes attributes) {
@@ -326,12 +376,12 @@ public class SaxModuleParser extends DefaultHandler {
         String packageName = getPackage(javaTypePackages);
         ClassName aspect = ClassName.get(packageName, className);
         ClassName aspectImplementation = ClassName.get(packageName, className + ASPECT_POSTFIX);
-        javaInterfaceBuilder = TypeSpec.interfaceBuilder(aspect);
-        javaClassBuilder = TypeSpec.classBuilder(aspectImplementation);
+        javaInterfaceBuilder = TypeSpec.interfaceBuilder(aspect).addModifiers(Modifier.PUBLIC);
+        javaClassBuilder = TypeSpec.classBuilder(aspectImplementation).addModifiers(Modifier.PUBLIC);
 
     }
-    
-    protected void startAspectParent(String uri, String localName, String qName, org.xml.sax.Attributes attributes){
+
+    protected void startAspectParent(String uri, String localName, String qName, org.xml.sax.Attributes attributes) {
         startTypeParent(uri, localName, qName, attributes);
     }
 
@@ -433,6 +483,18 @@ public class SaxModuleParser extends DefaultHandler {
                         endAspectChildAssociation(uri, localName, qName);
                     }
                     break;
+                case ASSOCIATION_SOURCE_TAG:
+                    handlingAssociationSource = false;
+                    break;
+                case ASSOCIATION_TARGET_TAG:
+                    handlingAssociationTarget = false;
+                    break;
+                case ASSOCIATION_MANY_TAG:
+                    endAssociationMany(uri, localName, qName);
+                    break;
+                case ASSOCIATION_MANDATORY_TAG:
+                    endAssociationMandatory(uri, localName, qName);
+                    break;
                 default:
                     log.warn("OOoops. Found unhandled opening tag: URI: " + uri + " localName " + localName);
 
@@ -452,15 +514,17 @@ public class SaxModuleParser extends DefaultHandler {
 
     protected void endType(String uri, String localName, String qName) throws IOException {
         String packageName = getPackage(javaTypePackages);
-        if(parent != null){
+        if (parent != null) {
             javaClassBuilder.superclass(parent);
+        } else {
+            javaClassBuilder.superclass(anchorClass);
         }
         TypeSpec type = javaClassBuilder.build();
         log.info("end type :\n" + type);
 
         fqcnToTypes.put(getFqcn(packageName, type.name), type);
         parent = null;
-        
+
         JavaFile javaFile = JavaFile.builder(packageName, type).build();
         javaFile.writeTo(new File(sourceDir));
     }
@@ -482,7 +546,7 @@ public class SaxModuleParser extends DefaultHandler {
 
         FieldSpec getterToQNameField = FieldSpec.builder(QName.class, fieldName, Modifier.PUBLIC, Modifier.FINAL, Modifier.STATIC).initializer("$T.createQName($S, $S)", QName.class, nameSpace, fieldName).build();
 
-        String methodName = "get" + "get" + capitalize(fieldName);
+        String methodName = "get" + capitalize(fieldName);
         MethodSpec getter = MethodSpec.methodBuilder(methodName).returns(resolveType(nameSpace, classPrefixAndName[1])).addModifiers(Modifier.PUBLIC)
                 .addCode("return null;\n").build(); //return null is placeholder; Should call nodeservice.getProperty(qName) with the node and propertys qName
 
@@ -495,11 +559,11 @@ public class SaxModuleParser extends DefaultHandler {
         fieldClass = null;
 
     }
-    
-    protected void endTypeParent(String uri, String localName, String qName){
+
+    protected void endTypeParent(String uri, String localName, String qName) {
         String parentTag = stringBuilder.toString();
         stringBuilder = null;
-        
+
         String[] type = parentTag.split(":");
         if (type.length != 2) {
             //I'm not sure if this case ever happens. So a warn log is here for awareness.
@@ -510,9 +574,9 @@ public class SaxModuleParser extends DefaultHandler {
         String parentClassName = type[1];
         String parentNamespace = resolveNamespaceByPrefix(parentPrefix);
         List<String> parentPackages = getPackages(parentNamespace);
-        
+
         parent = ClassName.get(getPackage(parentPackages), capitalize(parentClassName));
-        
+
     }
 
     protected void endTypeChildAssociation(String uri, String localName, String qName) {
@@ -523,28 +587,38 @@ public class SaxModuleParser extends DefaultHandler {
 
     }
 
+    protected void endAssociationMany(String uri, String localName, String qName) {
+
+    }
+
+    protected void endAssociationMandatory(String uri, String localName, String qName) {
+
+    }
+
     protected void endAspect(String uri, String localName, String qName) throws IOException {
         String packageName = getPackage(javaTypePackages);
-        
-        if(parent != null){
+
+        if (parent != null) {
             javaInterfaceBuilder.addSuperinterface(parent);
-            ClassName parentImplClassName = ClassName.get(parent.packageName(), parent.simpleName()+ASPECT_POSTFIX);
+            ClassName parentImplClassName = ClassName.get(parent.packageName(), parent.simpleName() + ASPECT_POSTFIX);
             javaClassBuilder.superclass(parentImplClassName);
+        } else {
+            javaClassBuilder.superclass(anchorClass);
         }
-        
-        TypeSpec aspect = javaClassBuilder.build();
-        TypeSpec aspectImpl = javaInterfaceBuilder.addSuperinterface(aspect.getClass()).build();
+
+        TypeSpec aspect = javaInterfaceBuilder.build();
+        TypeSpec aspectImpl = javaClassBuilder.addSuperinterface(ClassName.get(packageName, aspect.name)).build();
         log.info("end aspect :\n" + aspect + "\n" + aspectImpl);
 
         fqcnToTypes.put(getFqcn(packageName, aspect.name), aspect);
         fqcnToTypes.put(getFqcn(packageName, aspectImpl.name), aspectImpl);
         parent = null;
-        
+
         JavaFile.builder(packageName, aspect).build().writeTo(new File(sourceDir));
         JavaFile.builder(packageName, aspectImpl).build().writeTo(new File(sourceDir));
-        
+
     }
-    
+
     protected void endAspectParent(String uri, String localName, String qName) {
         endTypeParent(uri, localName, qName);
     }

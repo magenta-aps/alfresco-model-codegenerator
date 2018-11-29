@@ -5,6 +5,11 @@
  */
 package dk.magenta.alfresco;
 
+import com.squareup.javapoet.ClassName;
+import com.squareup.javapoet.FieldSpec;
+import com.squareup.javapoet.JavaFile;
+import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.TypeSpec;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -22,12 +27,14 @@ import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
 import java.util.zip.ZipInputStream;
+import javax.lang.model.element.Modifier;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 import jdk.nashorn.internal.ir.ContinueNode;
@@ -54,6 +61,8 @@ import javax.xml.stream.events.Attribute;
 import javax.xml.stream.events.EndElement;
 import javax.xml.stream.events.StartElement;
 import javax.xml.stream.events.XMLEvent;
+import org.alfresco.service.cmr.repository.NodeRef;
+import org.apache.commons.io.FileUtils;
 
 import org.apache.maven.shared.dependency.graph.DependencyNode;
 import org.apache.maven.shared.dependency.graph.traversal.CollectingDependencyNodeVisitor;
@@ -72,6 +81,8 @@ public class GenerateJavaMojo extends AbstractMojo {
     public static final String DICTIONARY_URI = "http://www.alfresco.org/model/dictionary/1.0";
     public static final String MODEL_TAG = "model";
     public static final String ALFRESCO_GROUPID = "org.alfresco";
+    
+    
 
     @Parameter(defaultValue = "${project}", readonly = true, required = true)
     private MavenProject project;
@@ -79,16 +90,32 @@ public class GenerateJavaMojo extends AbstractMojo {
     @Parameter(defaultValue = "${session}", readonly = true, required = true)
     private MavenSession session;
 
+    @Parameter(defaultValue = "${project.groupId}.generated", readonly = true, required = true)
+    private String packagePrefix;
+
     @Component(hint = "maven3")
     private DependencyGraphBuilder dependencyGraphBuilder;
 
+    private ClassName baseClass;
+    
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
+        baseClass = ClassName.get(packagePrefix, "Anchor");
+        
         // If you want to filter out certain dependencies.
         //ArtifactFilter artifactFilter = new IncludesArtifactFilter(Arrays.asList(new String[]{"groupId:artifactId:version"}));
         ProjectBuildingRequest buildingRequest = new DefaultProjectBuildingRequest(session.getProjectBuildingRequest());
         buildingRequest.setProject(project);
         try {
+            String codeGenDir = getGenerationDir();
+            getLog().info("Generating classes in '"+codeGenDir+"'");
+            File codeGenDirFile = new File(codeGenDir);
+            if(codeGenDirFile.exists()){
+                FileUtils.forceDelete(codeGenDirFile);
+            }
+            
+            generateBaseClass();
+            
             DependencyNode depenGraphRootNode = dependencyGraphBuilder.buildDependencyGraph(buildingRequest, null);
             CollectingDependencyNodeVisitor visitor = new CollectingDependencyNodeVisitor();
             depenGraphRootNode.accept(visitor);
@@ -104,7 +131,7 @@ public class GenerateJavaMojo extends AbstractMojo {
 //                if (!include(atf)) {
 //                    continue;
 //                }
-                getLog().info("Artifact: " + atf.getFile());
+                //getLog().info("Artifact: " + atf.getFile());
 
                 URI uri = URI.create("jar:file:" + atf.getFile().toString());
                 Map<String, String> env = new HashMap<String, String>();
@@ -113,7 +140,8 @@ public class GenerateJavaMojo extends AbstractMojo {
                 try (FileSystem zipfs = FileSystems.newFileSystem(uri, env)) {
                     for (Path path : zipfs.getRootDirectories()) {
                         //getLog().info("PATH: " + path);
-
+                        
+                    
                         Finder finder = new Finder(zipfs.getPathMatcher("glob:*.{xml}"));
                         Files.walkFileTree(path, finder);
                         finder.done();
@@ -154,7 +182,9 @@ public class GenerateJavaMojo extends AbstractMojo {
                     factory.setValidating(false);
                     SAXParser saxParser = factory.newSAXParser();
                     saxParser.getXMLReader().setEntityResolver(new DummyEntityResolver());
-                    SaxModuleParser moduleHandler = new SaxModuleParser(getLog(), Collections.EMPTY_LIST, project.getBuild().getSourceDirectory());
+                    List<String> packagePrefixes = Arrays.asList(packagePrefix.split("\\."));
+                    
+                    SaxModuleParser moduleHandler = new SaxModuleParser(getLog(), packagePrefixes, project.getBuild().getSourceDirectory(), baseClass);
 
                     InputStream precheckStream = Files.newInputStream(file, READ);
 
@@ -221,6 +251,27 @@ public class GenerateJavaMojo extends AbstractMojo {
             return FileVisitResult.CONTINUE;
         }
     }
+    
+    protected String getGenerationDir(){
+        String sourceDir = project.getBuild().getSourceDirectory().endsWith("/") ? project.getBuild().getSourceDirectory() : project.getBuild().getSourceDirectory()+"/";
+        return sourceDir+packagePrefix.replaceAll("\\.", "/");
+    }
+    
+    
+    protected void generateBaseClass() throws IOException{
+        TypeSpec baseType = TypeSpec.classBuilder(baseClass).addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                .addField(FieldSpec.builder(NodeRef.class, "nodeRef", Modifier.PRIVATE).build())
+                .addField(FieldSpec.builder(QName.class, "qName", Modifier.PRIVATE).build())
+                .addMethod(MethodSpec.methodBuilder("getNodeRef").returns(NodeRef.class).addModifiers(Modifier.PUBLIC).addCode("return this.nodeRef;$W").build())
+                .addMethod(MethodSpec.methodBuilder("getQName").returns(QName.class).addModifiers(Modifier.PUBLIC).addCode("return this.qName;$W").build())
+                .addMethod(MethodSpec.methodBuilder("setNodeRef")
+                        .addParameter(NodeRef.class, "nodeRef").addCode("this.nodeRef = nodeRef;$W").build())
+                .addMethod(MethodSpec.methodBuilder("setQName")
+                        .addParameter(QName.class, "qName").addCode("this.qName = qName;$W").build()).build();
+        
+        JavaFile.builder(baseClass.packageName(), baseType).build().writeTo(new File(project.getBuild().getSourceDirectory()));
+    }
+    
 
     public class DummyEntityResolver implements EntityResolver {
 

@@ -78,7 +78,7 @@ public class SaxModuleParserTest extends TestCase {
 //    }
 
     public void testGetPackages() {
-        SaxModuleParser parser = new SaxModuleParser(null, Collections.EMPTY_LIST, null);
+        SaxModuleParser parser = new SaxModuleParser(null, Collections.EMPTY_LIST, null, null);
         List<String> result = parser.getPackages("http://www.test.dk/min/pakke");
         assertEquals(Arrays.asList(new String[]{"dk", "test", "min", "pakke"}), result);
         
