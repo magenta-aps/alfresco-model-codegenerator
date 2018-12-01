@@ -18,3 +18,5 @@ nbactions.xml
 # Ignore generated files from test project
 Tests/src/main/java/
 Tests/**/*.log
+Plugin/src/main/java/
+Plugin/**/*.log

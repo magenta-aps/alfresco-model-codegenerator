@@ -11,6 +11,8 @@
     <properties>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
+        <alfresco.groupId>org.alfresco</alfresco.groupId>
+        <alfresco.version>5.1.g</alfresco.version>
     </properties>
      
     <dependencies>
@@ -29,12 +31,16 @@
 
         <dependency>
             <groupId>org.alfresco</groupId>
-            <artifactId>alfresco-repository</artifactId>
-            <version>5.1.g</version>
+            <artifactId>alfresco-data-model</artifactId>
+            <version>${alfresco.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.alfresco</groupId>
+            <artifactId>alfresco-repository</artifactId>
+            <version>${alfresco.version}</version>
+        </dependency>    
         
-        
-<!--        
+        <!--        
         <dependency>
             <groupId>org.apache.maven.shared</groupId>
             <artifactId>maven-dependency-tree</artifactId>
