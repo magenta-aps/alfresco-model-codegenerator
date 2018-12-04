@@ -11,15 +11,18 @@ import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.FieldSpec;
 import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.ParameterizedTypeName;
+import com.squareup.javapoet.TypeName;
 import com.squareup.javapoet.TypeSpec;
 import static dk.magenta.alfresco.GenerateJavaMojo.DICTIONARY_URI;
-import edu.emory.mathcs.backport.java.util.Collections;
+import dk.magenta.alfresco.anchor.Anchor;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringWriter;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -87,6 +90,8 @@ public class DOMModuleParser {
     public static final String ASSOCIATION_TARGET_TAG = "target";
     public static final String ASSOCIATION_MANDATORY_TAG = "mandatory";
     public static final String ASSOCIATION_MANY_TAG = "many";
+    public static final String ASSOCIATION_CLASS_TAG = "class";
+    public static final String ASSOCIATION_ROLE_TAG = "role";
 
     public static final String TITLE_TAG = "title";
 
@@ -106,7 +111,8 @@ public class DOMModuleParser {
     boolean associationTargetMandatory = false;
     boolean associationTargetMany = false;
 
-    private Map<String, TypeSpec> fqcnToTypes = new HashMap<>();
+    private Map<String, TypeSpec.Builder> fqcnToTypes = new HashMap<>();
+    private Map<String, List<MethodSpec>> methodsForClass = new HashMap<>();
 
     public DOMModuleParser(Log log, List<String> packagePrefixes, String sourceDir, ClassName anchorClass) {
         this.log = log;
@@ -139,22 +145,21 @@ public class DOMModuleParser {
         if (doc.getDocumentElement().getElementsByTagNameNS(DICTIONARY_URI, ASPECTS_TAG).getLength() > 0) {
             handleAspects(doc.getDocumentElement().getElementsByTagNameNS(DICTIONARY_URI, ASPECTS_TAG).item(0).getChildNodes());
         }
-
     }
-
-    private void printNodeList(NodeList list) {
-        for (int i = 0; i < list.getLength(); i++) {
-            printNodes(list.item(i), 0);
-        }
-    }
-
-    private void printNodes(Node node, int indention) {
-        System.out.println(getIndention(indention) + node.getNamespaceURI() + " " + node.getLocalName() + " " + node.getTextContent() + ": " + node.toString());
-        NodeList list = node.getChildNodes();
-        for (int i = 0; i < list.getLength(); i++) {
-            printNodes(list.item(i), indention + 4);
-        }
-    }
+//
+//    private void printNodeList(NodeList list) {
+//        for (int i = 0; i < list.getLength(); i++) {
+//            printNodes(list.item(i), 0);
+//        }
+//    }
+//
+//    private void printNodes(Node node, int indention) {
+//        System.out.println(getIndention(indention) + node.getNamespaceURI() + " " + node.getLocalName() + " " + node.getTextContent() + ": " + node.toString());
+//        NodeList list = node.getChildNodes();
+//        for (int i = 0; i < list.getLength(); i++) {
+//            printNodes(list.item(i), indention + 4);
+//        }
+//    }
 
     public String getIndention(int indention) {
         String toReturn = "";
@@ -166,14 +171,14 @@ public class DOMModuleParser {
 
     public void saveFiles() throws IOException {
         for (String fqcn : fqcnToTypes.keySet()) {
-            TypeSpec type = fqcnToTypes.get(fqcn);
+            TypeSpec.Builder typeBuilder = fqcnToTypes.get(fqcn);
             String packageName = getPackageFromFqcn(fqcn);
-            JavaFile javaFile = JavaFile.builder(packageName, type).build();
+            JavaFile javaFile = JavaFile.builder(packageName, typeBuilder.build()).build();
             javaFile.writeTo(new File(sourceDir));
         }
     }
 
-    public Map<String, TypeSpec> getParsedTypes() {
+    public Map<String, TypeSpec.Builder> getParsedTypes() {
         return Collections.unmodifiableMap(fqcnToTypes);
     }
 
@@ -212,10 +217,16 @@ public class DOMModuleParser {
             if (matches(typeNode, DICTIONARY_URI, TYPE_TAG)) {
                 QName typeQName = getNameAttribute(typeNode);
 
-                List<String> javaTypePackages = getPackages(typeQName.getNamespaceURI());
-                String packageName = getPackage(javaTypePackages);
+                List<String> javaTypePackages = Anchor.getPackages(packagePrefixes, typeQName.getNamespaceURI());
+                String packageName = Anchor.getPackage(javaTypePackages);
                 ClassName clazz = ClassName.get(packageName, capitalize(typeQName.getLocalName()));
                 TypeSpec.Builder javaClassBuilder = TypeSpec.classBuilder(clazz).addModifiers(Modifier.PUBLIC);
+
+                //Add any methods created by parsing other types, such as bidirectional association methods
+                List<MethodSpec> aspectMethods = methodsForClass.get(getFqcn(packageName, clazz.simpleName()));
+                if (aspectMethods != null) {
+                    javaClassBuilder.addMethods(aspectMethods);
+                }
 
                 String title = null;
                 ClassName parent = anchorClass;
@@ -229,10 +240,13 @@ public class DOMModuleParser {
                                 title = getNodeValue(typeNode);
                                 break;
                             case PARENT_TAG:
-                                parent = classNameFromQName(getQName(typeChild, getNodeValue(typeChild)));
+                                parent = classNameFromQName(getQName(getNodeValue(typeChild)));
                                 break;
                             case PROPERTIES_TAG:
                                 addProperties(null, javaClassBuilder, typeChild.getChildNodes());
+                                break;
+                            case ASSOCIATIONS_TAG:
+                                addAssociations(null, javaClassBuilder, typeChild.getChildNodes());
                                 break;
                             case MANDATORY_ASPECTS_TAG:
                                 addMandatoryAspectsToClass(javaClassBuilder, typeChild.getChildNodes());
@@ -245,8 +259,8 @@ public class DOMModuleParser {
                     }
 
                 }
-                TypeSpec type = javaClassBuilder.superclass(parent).build();
-                fqcnToTypes.put(getFqcn(packageName, type.name), type);
+                javaClassBuilder.superclass(parent);
+                fqcnToTypes.put(getFqcn(packageName, clazz.simpleName()), javaClassBuilder);
 
 //                javaClassBuilder.superclass(parent);
 //                JavaFile javaFile = JavaFile.builder(packageName, javaClassBuilder.build()).build();
@@ -261,12 +275,24 @@ public class DOMModuleParser {
             if (matches(aspectNode, DICTIONARY_URI, ASPECT_TAG)) {
                 QName aspectName = getNameAttribute(aspectNode);
 
-                List<String> javaTypePackages = getPackages(aspectName.getNamespaceURI());
-                String packageName = getPackage(javaTypePackages);
+                List<String> javaTypePackages = Anchor.getPackages(packagePrefixes, aspectName.getNamespaceURI());
+                String packageName = Anchor.getPackage(javaTypePackages);
                 String className = capitalizeAndSanitize(aspectName.getLocalName());
                 ClassName aspectClass = ClassName.get(packageName, className);
+                ClassName aspectImplClass = ClassName.get(packageName, className + ASPECT_POSTFIX);
                 TypeSpec.Builder javaInterfaceBuilder = TypeSpec.interfaceBuilder(aspectClass).addModifiers(Modifier.PUBLIC);
-                TypeSpec.Builder javaClassBuilder = TypeSpec.classBuilder(ClassName.get(packageName, className + ASPECT_POSTFIX)).addModifiers(Modifier.PUBLIC);
+                TypeSpec.Builder javaClassBuilder = TypeSpec.classBuilder(aspectImplClass).addModifiers(Modifier.PUBLIC);
+
+                //Add any methods created by parsing other types, such as bidirectional association methods
+                List<MethodSpec> aspectMethods = methodsForClass.get(getFqcn(packageName, aspectClass.simpleName()));
+                if (aspectMethods != null) {
+                    javaInterfaceBuilder.addMethods(aspectMethods);
+                }
+
+                List<MethodSpec> implMethods = methodsForClass.get(getFqcn(packageName, aspectImplClass.simpleName()));
+                if (implMethods != null) {
+                    javaInterfaceBuilder.addMethods(implMethods);
+                }
 
                 String aspectTitle = null;
                 ClassName parent = null;
@@ -280,7 +306,7 @@ public class DOMModuleParser {
                                 aspectTitle = getNodeValue(aspectChild);
                                 break;
                             case PARENT_TAG:
-                                parent = classNameFromQName(getQName(aspectChild, getNodeValue(aspectChild)));
+                                parent = classNameFromQName(getQName(getNodeValue(aspectChild)));
                                 break;
                             case ARCHIVE_TAG:
                                 if (getNodeValue(aspectChild).equalsIgnoreCase("true")) {
@@ -310,8 +336,8 @@ public class DOMModuleParser {
 //                classFile.writeTo(new File(sourceDir));
                 TypeSpec aspect = javaInterfaceBuilder.build();
                 TypeSpec aspectImpl = javaClassBuilder.build();
-                fqcnToTypes.put(getFqcn(packageName, aspect.name), aspect);
-                fqcnToTypes.put(getFqcn(packageName, aspectImpl.name), aspectImpl);
+                fqcnToTypes.put(getFqcn(packageName, aspectClass.simpleName()), javaInterfaceBuilder);
+                fqcnToTypes.put(getFqcn(packageName, aspectImplClass.simpleName()), javaClassBuilder);
 
             } else {
                 log.warn("Unexpected node in aspects: " + aspectNode);
@@ -337,7 +363,7 @@ public class DOMModuleParser {
                                 title = getNodeValue(propertyChild);
                                 break;
                             case TYPE_TAG:
-                                fieldType = getQName(propertyChild, getNodeValue(propertyChild));
+                                fieldType = getQName(getNodeValue(propertyChild));
                                 break;
                             case MANDATORY_TAG:
                                 if (getNodeValue(propertyChild).equalsIgnoreCase("true")) {
@@ -373,7 +399,7 @@ public class DOMModuleParser {
                     }
                     classBuilder.addMethod(getterMethod.build());
                 } catch (Exception ex) {
-                    throw new RuntimeException("Failed to parse property:\n"+nodeToString(propertyNode), ex);//Do something less runtime
+                    throw new RuntimeException("Failed to parse property:\n" + nodeToString(propertyNode), ex);//Do something less runtime
                 }
 
             } else {
@@ -382,12 +408,172 @@ public class DOMModuleParser {
         }
     }
 
+    protected void addAssociations(TypeSpec.Builder interfaceBuilder, TypeSpec.Builder classBuilder, NodeList associations) {
+        for (int assocIndex = 0; assocIndex < associations.getLength(); assocIndex++) {
+            Node associationNode = associations.item(assocIndex);
+            if (matches(associationNode, DICTIONARY_URI, ASSOCIATION_TAG) || matches(associationNode, DICTIONARY_URI, CHILD_ASSOCIATION_TAG)) {
+                QName associationName = getNameAttribute(associationNode);
+                SourceTag source = null;
+                TargetTag target = null;
+
+                NodeList associationChildren = associationNode.getChildNodes();
+                for (int associationChildIndex = 0; associationChildIndex < associationChildren.getLength(); associationChildIndex++) {
+                    Node associationChild = associationChildren.item(associationChildIndex);
+                    if (DICTIONARY_URI.equals(associationChild.getNamespaceURI())) {
+                        switch (associationChild.getLocalName()) {
+                            case ASSOCIATION_SOURCE_TAG:
+                                source = handleSourceTag(associationChild);
+                                break;
+                            case ASSOCIATION_TARGET_TAG:
+                                target = handleTargetTag(associationChild);
+                                break;
+                            default:
+                                log.warn("Encountered unknown tag in association:\n" + nodeToString(associationChild));
+
+                        }
+                    } else {
+                        log.warn("Unexpected namespace inside association:\n" + nodeToString(associationChild));
+                    }
+                }
+                
+                if(source == null || target == null){
+                    throw new RuntimeException("Could not parse association. Source or Target tag was missing:\n"+nodeToString(associationNode));//Do something less runtimey
+                }
+                
+                //Create towards-target methods
+                
+                addOutboundMethod(interfaceBuilder, classBuilder, associationName, target.isMany(), target.getType(), matches(associationNode, DICTIONARY_URI, CHILD_ASSOCIATION_TAG));
+                
+            }
+        }
+    }
+    
+    private void addOutboundMethod(TypeSpec.Builder interfaceBuilder, TypeSpec.Builder classBuilder, QName assocName, boolean many, ClassName targetClass, boolean isChild){
+        ClassName list = ClassName.get("java.util", "List");
+                String targetName = targetClass.simpleName();
+                String methodName = "get"+assocName.getLocalName();
+                String associationFieldName = sanitize(assocName.getLocalName()+"Association");
+                TypeName listOfType = ParameterizedTypeName.get(list, targetClass);
+                TypeName returnType;
+                if(many){
+                    returnType = listOfType;
+                }else{
+                    returnType =targetClass;
+                }
+                
+                FieldSpec.Builder field = FieldSpec.builder(QName.class, associationFieldName, Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL).initializer("$T.createQName($S, $S)", QName.class, assocName.getNamespaceURI(), assocName.getLocalName());
+                MethodSpec.Builder method = MethodSpec.methodBuilder(methodName).returns(returnType).addModifiers(Modifier.PUBLIC);
+                if(interfaceBuilder != null){
+                    interfaceBuilder.addMethod(method.build());
+                }
+                if(interfaceBuilder != null){
+                    method.addAnnotation(Override.class);
+                }
+                if(isChild){
+                    if(many){
+                        method.addCode("$[return getChildAssociations($T.class, $L);$]\n", targetClass, associationFieldName);
+                    }else{
+                        method.addCode("$[$T types = getChildAssociations($T.class, $L);$]\n$[return types != null && !types.isEmpty() ? types.get(0) : return null;$]\n", listOfType, targetClass, associationFieldName);
+                    }
+                }else{
+                    if(many){
+                        method.addCode("$[return getTargetAssociations($T.class, $L);$]\n", targetClass, associationFieldName);
+                    }else{
+                        method.addCode("$[$T types = getTargetAssociations($T.class, $L);$]\n$[return types != null && !types.isEmpty() ? types.get(0) : return null;$]\n", listOfType, targetClass, associationFieldName);
+
+                    }
+                }
+                
+                classBuilder.addField(field.build());
+                classBuilder.addMethod(method.build());
+                
+    }
+
+    private SourceTag handleSourceTag(Node source) {
+        NodeList sourceChildren = source.getChildNodes();
+        SourceTag toReturn = new SourceTag();
+        for (int sourceChildIndex = 0; sourceChildIndex < sourceChildren.getLength(); sourceChildIndex++) {
+            Node sourceChild = sourceChildren.item(sourceChildIndex);
+            if (DICTIONARY_URI.equals(sourceChild.getNamespaceURI())) {
+                switch (sourceChild.getLocalName()) {
+                    case ASSOCIATION_MANDATORY_TAG:
+                        String mandatory = getNodeValue(sourceChild);
+                        if (mandatory.equalsIgnoreCase("true")) {
+                            toReturn.setMandatory(true);
+                        } else {
+                            toReturn.setMandatory(false);
+                        }
+                        break;
+                    case ASSOCIATION_MANY_TAG:
+                        String many = getNodeValue(sourceChild);
+                        if (many.equalsIgnoreCase("true")) {
+                            toReturn.setMany(true);
+                        } else {
+                            toReturn.setMany(false);
+                        }
+                        break;
+                    case ASSOCIATION_ROLE_TAG:
+                        toReturn.setRole(getNodeValue(sourceChild));
+                        break;
+                    default:
+                        log.warn("Encountered unknown tag in association:\n" + nodeToString(sourceChild));
+
+                }
+            } else {
+                log.warn("Unexpected namespace inside association:\n" + nodeToString(sourceChild));
+            }
+        }
+        return toReturn;
+
+    }
+
+    private TargetTag handleTargetTag(Node target) {
+        NodeList targetChildren = target.getChildNodes();
+        TargetTag toReturn = new TargetTag();
+        for (int targetChildrenIndex = 0; targetChildrenIndex < targetChildren.getLength(); targetChildrenIndex++) {
+            Node targetChild = targetChildren.item(targetChildrenIndex);
+            if (DICTIONARY_URI.equals(targetChild.getNamespaceURI())) {
+                switch (targetChild.getLocalName()) {
+                    case ASSOCIATION_MANDATORY_TAG:
+                        String mandatory = getNodeValue(targetChild);
+                        if (mandatory.equalsIgnoreCase("true")) {
+                            toReturn.setMandatory(true);
+                        } else {
+                            toReturn.setMandatory(false);
+                        }
+                        break;
+                    case ASSOCIATION_MANY_TAG:
+                        String many = getNodeValue(targetChild);
+                        if (many.equalsIgnoreCase("true")) {
+                            toReturn.setMany(true);
+                        } else {
+                            toReturn.setMany(false);
+                        }
+                        break;
+                    case ASSOCIATION_ROLE_TAG:
+                        toReturn.setRole(getNodeValue(targetChild));
+                        break;
+                    case ASSOCIATION_CLASS_TAG:
+                        String targetClass = getNodeValue(targetChild);
+                        QName className = getQName(targetClass);
+                        toReturn.setType(ClassName.get(Anchor.getPackage(Anchor.getPackages(packagePrefixes, className.getNamespaceURI())), capitalizeAndSanitize(className.getLocalName())));
+                    default:
+                        log.warn("Encountered unknown tag in association:\n" + nodeToString(targetChild));
+
+                }
+            } else {
+                log.warn("Unexpected namespace inside association:\n" + nodeToString(targetChild));
+            }
+        }
+        return toReturn;
+    }
+
     protected void addMandatoryAspectsToClass(TypeSpec.Builder classBuilder, NodeList mandatoryAspects) {
 
     }
 
     protected ClassName classNameFromQName(QName name) {
-        return ClassName.get(getPackage(getPackages(name.getNamespaceURI())), capitalizeAndSanitize(name.getLocalName()));
+        return ClassName.get(Anchor.getPackage(Anchor.getPackages(packagePrefixes, name.getNamespaceURI())), capitalizeAndSanitize(name.getLocalName()));
     }
 
     protected String getNodeValue(Node titleNode) {
@@ -395,10 +581,10 @@ public class DOMModuleParser {
     }
 
     protected QName getNameAttribute(Node node) {
-        return getQName(node, node.getAttributes().getNamedItem("name").getNodeValue());
+        return getQName(node.getAttributes().getNamedItem("name").getNodeValue());
     }
 
-    protected QName getQName(Node node, String prefixedName) {
+    protected QName getQName(String prefixedName) {
         String[] type = prefixedName.split(":");
         if (type.length != 2) {
             //I'm not sure if this case ever happens. So a warn log is here for awareness.
@@ -420,50 +606,50 @@ public class DOMModuleParser {
 
     }
 
-    protected List<String> getPackages(String namespaceURI) {
-        Scanner uriScanner = new Scanner(namespaceURI).useDelimiter(Pattern.compile("[\\/]"));
-        List<String> uriPackages = new LinkedList<>();
-        while (uriScanner.hasNext()) {
-            uriPackages.add(uriScanner.next());
-        }
-        while (uriPackages.get(0).startsWith("http") || uriPackages.get(0).isEmpty()) {
-            uriPackages.remove(0);
-        }
-        if (uriPackages.get(0).contains(".")) {
-            String addressPart = uriPackages.remove(0);
-            Scanner addressScanner = new Scanner(addressPart).useDelimiter("[\\.]");
-            while (addressScanner.hasNext()) {
-                String token = addressScanner.next();
-                if (token.equals("www")) {
-                    continue;
-                }
-                uriPackages.add(0, token);
-
-            }
-        }
-
-        List<String> packages = new ArrayList<>(packagePrefixes);
-        for (String uriPackage : uriPackages) {
-            if (uriPackage.substring(0, 1).matches("^\\d")) {
-                uriPackage = "_" + uriPackage;
-            }
-            packages.add(uriPackage.replaceAll("\\.", "_"));
-        }
-        return packages;
-    }
-
-    protected String getPackage(List<String> packages) {
-        boolean first = true;
-        String packageString = "";
-        for (String pkg : packages) {
-            if (!first) {
-                packageString = packageString + ".";
-            }
-            packageString = packageString + pkg;
-            first = false;
-        }
-        return packageString;
-    }
+//    public  List<String> getPackages(String namespaceURI) {
+//        Scanner uriScanner = new Scanner(namespaceURI).useDelimiter(Pattern.compile("[\\/]"));
+//        List<String> uriPackages = new LinkedList<>();
+//        while (uriScanner.hasNext()) {
+//            uriPackages.add(uriScanner.next());
+//        }
+//        while (uriPackages.get(0).startsWith("http") || uriPackages.get(0).isEmpty()) {
+//            uriPackages.remove(0);
+//        }
+//        if (uriPackages.get(0).contains(".")) {
+//            String addressPart = uriPackages.remove(0);
+//            Scanner addressScanner = new Scanner(addressPart).useDelimiter("[\\.]");
+//            while (addressScanner.hasNext()) {
+//                String token = addressScanner.next();
+//                if (token.equals("www")) {
+//                    continue;
+//                }
+//                uriPackages.add(0, token);
+//
+//            }
+//        }
+//
+//        List<String> packages = new ArrayList<>(packagePrefixes);
+//        for (String uriPackage : uriPackages) {
+//            if (uriPackage.substring(0, 1).matches("^\\d")) {
+//                uriPackage = "_" + uriPackage;
+//            }
+//            packages.add(uriPackage.replaceAll("\\.", "_"));
+//        }
+//        return packages;
+//    }
+//
+//    protected String getPackage(List<String> packages) {
+//        boolean first = true;
+//        String packageString = "";
+//        for (String pkg : packages) {
+//            if (!first) {
+//                packageString = packageString + ".";
+//            }
+//            packageString = packageString + pkg;
+//            first = false;
+//        }
+//        return packageString;
+//    }
 
     public static String capitalize(String toCapitalize) {
         return toCapitalize.substring(0, 1).toUpperCase() + toCapitalize.substring(1);
@@ -554,7 +740,7 @@ public class DOMModuleParser {
     }
 
     private String nodeToString(Node node) {
-        if(node == null){
+        if (node == null) {
             return null;
         }
         StringWriter sw = new StringWriter();
@@ -567,6 +753,73 @@ public class DOMModuleParser {
             log.warn("Attempted to transport XML for node " + node.getBaseURI());
         }
         return sw.toString();
+    }
+
+    private static class SourceTag {
+
+        private boolean mandatory;
+        private boolean many;
+        private String role;
+
+        public SourceTag() {
+        }
+
+        public SourceTag(boolean mandatory, boolean many, String role) {
+            this.mandatory = mandatory;
+            this.many = many;
+            this.role = role;
+        }
+
+        public String getRole() {
+            return role;
+        }
+
+        public void setRole(String role) {
+            this.role = role;
+        }
+
+        public boolean isMandatory() {
+            return mandatory;
+        }
+
+        public void setMandatory(boolean mandatory) {
+            this.mandatory = mandatory;
+        }
+
+        public boolean isMany() {
+            return many;
+        }
+
+        public void setMany(boolean many) {
+            this.many = many;
+        }
+
+    }
+
+    private static class TargetTag extends SourceTag {
+
+        private ClassName type;
+
+        public TargetTag() {
+        }
+
+        public TargetTag(ClassName type) {
+            this.type = type;
+        }
+
+        public TargetTag(ClassName type, boolean mandatory, boolean many, String role) {
+            super(mandatory, many, role);
+            this.type = type;
+        }
+
+        public ClassName getType() {
+            return type;
+        }
+
+        public void setType(ClassName type) {
+            this.type = type;
+        }
+
     }
 
 }

@@ -113,6 +113,16 @@
     </dependencies>
     
     <build>
+        <resources>
+            <resource>
+                <directory>${project.build.sourceDirectory}</directory>
+                <includes>
+                    <include>
+                        dk/magenta/alfresco/anchor/Anchor.java
+                    </include>
+                </includes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
