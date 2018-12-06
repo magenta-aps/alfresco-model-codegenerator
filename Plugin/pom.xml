@@ -118,7 +118,13 @@
                 <directory>${project.build.sourceDirectory}</directory>
                 <includes>
                     <include>
-                        dk/magenta/alfresco/anchor/Anchor.java
+                        dk/magenta/alfresco/anchor/Aspect.java
+                    </include>
+                    <include>
+                        dk/magenta/alfresco/anchor/Name.java
+                    </include>
+                    <include>
+                        dk/magenta/alfresco/anchor/NodeBase.java
                     </include>
                 </includes>
             </resource>

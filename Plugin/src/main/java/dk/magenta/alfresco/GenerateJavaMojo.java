@@ -13,10 +13,11 @@ import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
 import com.squareup.javapoet.TypeSpec;
-import dk.magenta.alfresco.anchor.Anchor;
+import dk.magenta.alfresco.anchor.NodeBase;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.FileWriter;
@@ -119,14 +120,18 @@ public class GenerateJavaMojo extends AbstractMojo {
     @Component(hint = "maven3")
     private DependencyGraphBuilder dependencyGraphBuilder;
 
-    private ClassName baseClass;
+    private ClassName baseNode;
+    private ClassName baseAspect;
+    private ClassName nameAnnotation;
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
-        baseClass = ClassName.get(packagePrefix, "Anchor");
+        baseNode = ClassName.get(packagePrefix, "NodeBase");
+        baseAspect = ClassName.get(packagePrefix, "Aspect");
+        nameAnnotation = ClassName.get(packagePrefix, "Name");
 
         List<String> packagePrefixes = Arrays.asList(packagePrefix.split("\\."));
-        DOMModuleParser parser = new DOMModuleParser(getLog(), packagePrefixes, project.getBuild().getSourceDirectory(), baseClass);
+        DOMModuleParser parser = new DOMModuleParser(getLog(), packagePrefixes, project.getBuild().getSourceDirectory(), baseNode, baseAspect, nameAnnotation);
                                     
         // If you want to filter out certain dependencies.
         //ArtifactFilter artifactFilter = new IncludesArtifactFilter(Arrays.asList(new String[]{"groupId:artifactId:version"}));
@@ -339,8 +344,15 @@ public class GenerateJavaMojo extends AbstractMojo {
         File sourceDir = new File(project.getBuild().getSourceDirectory());
         File generationDir = new File(sourceDir, packagePrefix.replaceAll("\\.", "/"));
         FileUtils.forceMkdir(generationDir);
-        File anchorFile = new File(generationDir, "Anchor.java");
-        try(PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(anchorFile), Charset.forName("UTF-8"))); BufferedReader in = new BufferedReader(new InputStreamReader(getClass().getResourceAsStream("/dk/magenta/alfresco/anchor/Anchor.java"), Charset.forName("UTF-8")))){
+        generateClass("/dk/magenta/alfresco/anchor/NodeBase.java", generationDir, "NodeBase.java");
+        generateClass("/dk/magenta/alfresco/anchor/Aspect.java", generationDir, "Aspect.java");
+        generateClass("/dk/magenta/alfresco/anchor/Name.java", generationDir, "Name.java");
+        
+    }
+    
+    protected void generateClass(String resourceName, File generationDir, String targetName) throws FileNotFoundException, IOException{
+        File targetFile = new File(generationDir, targetName);
+        try(PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(targetFile), Charset.forName("UTF-8"))); BufferedReader in = new BufferedReader(new InputStreamReader(getClass().getResourceAsStream(resourceName), Charset.forName("UTF-8")))){
            while(in.ready()){
                String line = in.readLine();
                if(line.matches("^\\s*package (.+);")){
@@ -350,27 +362,6 @@ public class GenerateJavaMojo extends AbstractMojo {
                }
            }
         }
-//        String getAppHelperMethodName = "getApplicationContext";
-//        ClassName apphelper = ClassName.get("org.alfresco.util", "ApplicationContextHelper");
-//        
-//        TypeSpec baseType = TypeSpec.classBuilder(baseClass).addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-//                .addField(FieldSpec.builder(NodeRef.class, "nodeRef", Modifier.PRIVATE).build())
-//                .addField(FieldSpec.builder(QName.class, "qName", Modifier.PRIVATE).build())
-//                .addMethod(MethodSpec.methodBuilder("getNodeRef").returns(NodeRef.class).addModifiers(Modifier.PUBLIC).addCode("return this.nodeRef;$W").build())
-//                .addMethod(MethodSpec.methodBuilder("getQName").returns(QName.class).addModifiers(Modifier.PUBLIC).addCode("return this.qName;$W").build())
-//                .addMethod(MethodSpec.methodBuilder("setNodeRef")
-//                        .addParameter(NodeRef.class, "nodeRef").addCode("this.nodeRef = nodeRef;$W").build())
-//                .addMethod(MethodSpec.methodBuilder("setQName")
-//                        .addParameter(QName.class, "qName").addCode("this.qName = qName;$W").build())
-//                .addMethod(MethodSpec.methodBuilder(getAppHelperMethodName).addModifiers(Modifier.PROTECTED).returns(ApplicationContext.class)
-//                        .addCode("return $T.getApplicationContext();\n", apphelper).build())
-//                .addMethod(MethodSpec.methodBuilder("getNodeService").addModifiers(Modifier.PROTECTED).returns(NodeService.class)
-//                        .addCode("return $N().getBean($T.class);\n", getAppHelperMethodName, NodeService.class).build())
-//                .addMethod(MethodSpec.methodBuilder("getPackageName").returns(String.class).addModifiers(Modifier.PROTECTED).addCode(getPackagesCodeBlock())
-//                        .addParameter(QName.class, "qName").build()).build();
-//                
-//
-//        JavaFile.builder(baseClass.packageName(), baseType).build().writeTo(new File(project.getBuild().getSourceDirectory()));
     }
 //    protected CodeBlock getPackagesCodeBlock(){
 //        TypeName ListOfStrings = ParameterizedTypeName.get(ClassName.get("java.util", "List"), ClassName.get(String.class));

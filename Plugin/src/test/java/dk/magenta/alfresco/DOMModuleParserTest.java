@@ -6,6 +6,10 @@
 package dk.magenta.alfresco;
 
 import com.squareup.javapoet.ClassName;
+import com.squareup.javapoet.TypeSpec;
+import dk.magenta.alfresco.anchor.Aspect;
+import dk.magenta.alfresco.anchor.Name;
+import dk.magenta.alfresco.anchor.NodeBase;
 import edu.emory.mathcs.backport.java.util.Arrays;
 import java.io.File;
 import java.io.IOException;
@@ -43,7 +47,7 @@ public class DOMModuleParserTest {
     public void setUp() {
         Log log = EasyMock.createMock(Log.class);
         File file = new File("src/test/java/");
-        parser = new DOMModuleParser(log, Arrays.asList(new String[]{"test.magenta.generated"}), file.getAbsolutePath(), ClassName.get("test.magenta.generated", "BaseClass"));
+        parser = new DOMModuleParser(log, Arrays.asList(new String[]{"test.magenta.generated"}), file.getAbsolutePath(), ClassName.get(NodeBase.class), ClassName.get(Aspect.class), ClassName.get(Name.class));
     }
     
     @After
@@ -59,8 +63,8 @@ public class DOMModuleParserTest {
             parser.execute(system);
         }
         
-        for(String fqcn : parser.getParsedTypes().keySet()){
-            System.out.println(parser.getParsedTypes().get(fqcn));
+        for(TypeSpec spec : parser.getParsedTypes()){
+            System.out.println(spec);
         }
         
     }
