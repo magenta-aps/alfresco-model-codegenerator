@@ -6,27 +6,15 @@
 package dk.magenta.alfresco;
 
 import com.squareup.javapoet.ClassName;
-import com.squareup.javapoet.CodeBlock;
-import com.squareup.javapoet.FieldSpec;
-import com.squareup.javapoet.JavaFile;
-import com.squareup.javapoet.MethodSpec;
-import com.squareup.javapoet.ParameterizedTypeName;
-import com.squareup.javapoet.TypeName;
-import com.squareup.javapoet.TypeSpec;
-import dk.magenta.alfresco.anchor.NodeBase;
-import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
-import java.io.StringReader;
 import java.net.URI;
 import java.nio.charset.Charset;
 import java.nio.file.FileSystem;
@@ -43,12 +31,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.Scanner;
 import java.util.regex.Pattern;
-import javax.lang.model.element.Modifier;
-import javax.xml.parsers.SAXParser;
-import javax.xml.parsers.SAXParserFactory;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
@@ -65,16 +48,10 @@ import org.apache.maven.project.ProjectBuildingRequest;
 import org.apache.maven.shared.dependency.graph.DependencyGraphBuilder;
 
 import javax.xml.parsers.ParserConfigurationException;
-import org.alfresco.service.cmr.repository.NodeRef;
-import org.alfresco.service.cmr.repository.NodeService;
-import org.alfresco.service.namespace.QName;
 import org.apache.commons.io.FileUtils;
 
 import org.apache.maven.shared.dependency.graph.DependencyNode;
 import org.apache.maven.shared.dependency.graph.traversal.CollectingDependencyNodeVisitor;
-import org.springframework.context.ApplicationContext;
-import org.xml.sax.EntityResolver;
-import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 
 /**
@@ -117,6 +94,8 @@ public class GenerateJavaMojo extends AbstractMojo {
     @Parameter(defaultValue = INCLUDE_EXCLUDE_DEFAULT, readonly = true, required = false)
     private String excludeFiles;
 
+    private List<TypePostfix> postfixes = new ArrayList<>();
+    
     @Component(hint = "maven3")
     private DependencyGraphBuilder dependencyGraphBuilder;
 
@@ -126,12 +105,13 @@ public class GenerateJavaMojo extends AbstractMojo {
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
+        postfixes.add(new TypePostfix("http://www.alfresco.org/model/versionstore/2.0", null, "2"));
         baseNode = ClassName.get(packagePrefix, "NodeBase");
         baseAspect = ClassName.get(packagePrefix, "Aspect");
         nameAnnotation = ClassName.get(packagePrefix, "Name");
 
         List<String> packagePrefixes = Arrays.asList(packagePrefix.split("\\."));
-        DOMModuleParser parser = new DOMModuleParser(getLog(), packagePrefixes, project.getBuild().getSourceDirectory(), baseNode, baseAspect, nameAnnotation);
+        DOMModuleParser parser = new DOMModuleParser(getLog(), packagePrefixes, project.getBuild().getSourceDirectory(), baseNode, baseAspect, nameAnnotation, postfixes);
                                     
         // If you want to filter out certain dependencies.
         //ArtifactFilter artifactFilter = new IncludesArtifactFilter(Arrays.asList(new String[]{"groupId:artifactId:version"}));

@@ -14,6 +14,7 @@ import edu.emory.mathcs.backport.java.util.Arrays;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import javax.xml.parsers.ParserConfigurationException;
 import org.apache.maven.plugin.logging.Log;
 import org.easymock.EasyMock;
@@ -47,7 +48,7 @@ public class DOMModuleParserTest {
     public void setUp() {
         Log log = EasyMock.createMock(Log.class);
         File file = new File("src/test/java/");
-        parser = new DOMModuleParser(log, Arrays.asList(new String[]{"test.magenta.generated"}), file.getAbsolutePath(), ClassName.get(NodeBase.class), ClassName.get(Aspect.class), ClassName.get(Name.class));
+        parser = new DOMModuleParser(log, Arrays.asList(new String[]{"test.magenta.generated"}), file.getAbsolutePath(), ClassName.get(NodeBase.class), ClassName.get(Aspect.class), ClassName.get(Name.class), new ArrayList<>());
     }
     
     @After

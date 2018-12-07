@@ -90,14 +90,13 @@ public class DOMModuleParser {
 
     public static final String TITLE_TAG = "title";
 
-    
-
     private final Log log;
     private final List<String> packagePrefixes;
     private final String sourceDir;
     private final ClassName nodeBaseClass;
     private final ClassName aspectBaseClass;
     private final ClassName nameClass;
+    private final List<TypePostfix> postfixes;
     private final String encoding = "UTF-8";
 
     private final Map<String, String> importMappings = new HashMap<>();
@@ -111,13 +110,14 @@ public class DOMModuleParser {
     private Map<String, TypeContainer> fqcnToTypes = new HashMap<>();
     private Map<String, MethodContainer> methodsForClass = new HashMap<>();
 
-    public DOMModuleParser(Log log, List<String> packagePrefixes, String sourceDir, ClassName nodeBaseClass, ClassName aspectClass, ClassName nameClass) {
+    public DOMModuleParser(Log log, List<String> packagePrefixes, String sourceDir, ClassName nodeBaseClass, ClassName aspectClass, ClassName nameClass, List<TypePostfix> prefixes) {
         this.log = log;
         this.packagePrefixes = packagePrefixes;
         this.sourceDir = sourceDir;
         this.nodeBaseClass = nodeBaseClass;
         this.aspectBaseClass = aspectClass;
         this.nameClass = nameClass;
+        this.postfixes = prefixes;
     }
 
     public void execute(InputStream stream) throws ParserConfigurationException, SAXException, IOException {
@@ -236,7 +236,7 @@ public class DOMModuleParser {
 
                 List<String> javaTypePackages = NodeBase.getPackages(packagePrefixes, typeQName.getNamespaceURI());
                 String packageName = NodeBase.getPackage(javaTypePackages);
-                ClassName clazz = ClassName.get(packageName, capitalize(typeQName.getLocalName()));
+                ClassName clazz = ClassName.get(packageName, capitalize(typeQName.getLocalName()+getPostfix(typeQName)));
                 TypeSpec.Builder javaClassBuilder = TypeSpec.classBuilder(clazz).addModifiers(Modifier.PUBLIC);
 
                 //Add any methods created by parsing other types, such as bidirectional association methods
@@ -304,8 +304,8 @@ public class DOMModuleParser {
                 List<String> javaTypePackages = NodeBase.getPackages(packagePrefixes, aspectName.getNamespaceURI());
                 String packageName = NodeBase.getPackage(javaTypePackages);
                 String className = capitalizeAndSanitize(aspectName.getLocalName());
-                ClassName aspectClass = ClassName.get(packageName, className);
-                ClassName aspectImplClass = ClassName.get(packageName, className + NodeBase.ASPECT_POSTFIX);
+                ClassName aspectClass = ClassName.get(packageName, className+getPostfix(aspectName));
+                ClassName aspectImplClass = ClassName.get(packageName, className + NodeBase.ASPECT_POSTFIX+getPostfix(aspectName));
                 TypeSpec.Builder javaInterfaceBuilder = TypeSpec.interfaceBuilder(aspectClass).addModifiers(Modifier.PUBLIC);
                 TypeSpec.Builder javaClassBuilder = TypeSpec.classBuilder(aspectImplClass).addModifiers(Modifier.PUBLIC);
 
@@ -427,8 +427,8 @@ public class DOMModuleParser {
                 }
 
                 try {
-                    String propertyFieldName = sanitize(classQName.getLocalName());
-                    String getterMethodName = capitalizeAndSanitize(classQName.getLocalName());
+                    String propertyFieldName = sanitize(classQName.getLocalName())+getPostfix(classQName);
+                    String getterMethodName = capitalizeAndSanitize(classQName.getLocalName())+getPostfix(classQName);
 
                     Class methodReturnType = resolveType(fieldType.getNamespaceURI(), fieldType.getLocalName());
                     if (interfaceBuilder != null) {
@@ -487,10 +487,12 @@ public class DOMModuleParser {
                 }
 
                 Boolean isChild = matches(associationNode, DICTIONARY_URI, CHILD_ASSOCIATION_TAG);
-                //Create towards-target methods              
-                addOutboundMethod(interfaceBuilder, classBuilder, associationName, target.isMany(), target.getType(), isChild);
+                //Create towards-target methods
+                ClassName targetClass = target.getType();
+                targetClass = ClassName.get(targetClass.packageName(), targetClass.simpleName()+getPostfix(target.targetQName));
+                addOutboundMethod(interfaceBuilder, classBuilder, associationName, target.isMany(), targetClass, isChild);
 
-                String targetFQCN = getFqcn(target.getType().packageName(), target.getType().simpleName());
+                String targetFQCN = getFqcn(targetClass.packageName(), targetClass.simpleName());
                 TypeContainer container = fqcnToTypes.get(targetFQCN);
                 if (container != null) {
                     if (container.getInterfaceBuilder() != null) {
@@ -527,9 +529,11 @@ public class DOMModuleParser {
 
     private void addOutboundMethod(TypeSpec.Builder interfaceBuilder, TypeSpec.Builder classBuilder, QName assocName, boolean many, ClassName targetClass, boolean isChild) {
         ClassName list = ClassName.get("java.util", "List");
-        String methodName = "get" + capitalizeAndSanitize(assocName.getLocalName()) + (isChild ? "Child" : "Target");
-        String associationFieldName = sanitize(assocName.getLocalName() + (isChild ? "Child" : "Target") + "Association");
+        String methodName = "get" + capitalizeAndSanitize(assocName.getLocalName()) + getPostfix(assocName) + (isChild ? "Child" : "Target");
+        String associationFieldName = sanitize(assocName.getLocalName() +getPostfix(assocName) + (isChild ? "Child" : "Target") + "Association");
+        //targetClass = ClassName.get(targetClass.packageName(), targetClass.simpleName()+getPostfix(assocName));
         TypeName listOfType = ParameterizedTypeName.get(list, targetClass);
+        
         TypeName returnType;
         if (many) {
             returnType = listOfType;
@@ -569,7 +573,7 @@ public class DOMModuleParser {
         ClassName list = ClassName.get("java.util", "List");
         TypeName listOfType = ParameterizedTypeName.get(list, targetClass);
         TypeName returnType;
-        String methodName = "get" + capitalizeAndSanitize(assocName.getLocalName()) + (isChild ? "Parent" : "Source");
+        String methodName = "get" + capitalizeAndSanitize(assocName.getLocalName()) + getPostfix(assocName) + (isChild ? "Parent" : "Source");
         if (many) {
             returnType = listOfType;
         } else {
@@ -581,14 +585,14 @@ public class DOMModuleParser {
     }
 
     private FieldSpec.Builder getInputMethodField(TypeSpec.Builder interfaceBuilder, TypeSpec.Builder classBuilder, MethodSpec.Builder method, QName assocName, boolean many, TypeName targetClass, boolean isChild) {
-        String associationFieldName = sanitize(assocName.getLocalName() + (isChild ? "Parent" : "Source") + "Association");
+        String associationFieldName = sanitize(assocName.getLocalName() + getPostfix(assocName) + (isChild ? "Parent" : "Source") + "Association");
         FieldSpec.Builder field = FieldSpec.builder(QName.class, associationFieldName, Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL).initializer("$T.createQName($S, $S)", QName.class, assocName.getNamespaceURI(), assocName.getLocalName());
         return field;
     }
 
     private MethodSpec.Builder decorateInboundMethod(TypeSpec.Builder interfaceBuilder, TypeSpec.Builder classBuilder, MethodSpec.Builder method, QName assocName, boolean many, TypeName targetClass, boolean isChild) {
         ClassName list = ClassName.get("java.util", "List");
-        String associationFieldName = sanitize(assocName.getLocalName() + (isChild ? "Parent" : "Source") + "Association");
+        String associationFieldName = sanitize(assocName.getLocalName() + getPostfix(assocName) + (isChild ? "Parent" : "Source") + "Association");
         TypeName listOfType = ParameterizedTypeName.get(list, targetClass);
 
         if (interfaceBuilder != null) {
@@ -679,6 +683,7 @@ public class DOMModuleParser {
                     case ASSOCIATION_CLASS_TAG:
                         String targetClass = getNodeValue(targetChild);
                         QName className = getQName(targetClass);
+                        toReturn.setTargetQName(className);
                         toReturn.setType(ClassName.get(NodeBase.getPackage(NodeBase.getPackages(packagePrefixes, className.getNamespaceURI())), capitalizeAndSanitize(className.getLocalName())));
                     default:
                         log.warn("Encountered unknown tag in association:\n" + nodeToString(targetChild));
@@ -701,8 +706,8 @@ public class DOMModuleParser {
                 if (interfaceBuilder != null) {
                     interfaceBuilder.addMethod(methodBuilder.build().toBuilder().addModifiers(Modifier.ABSTRACT).build());
                     classBuilder.addMethod(methodBuilder.addCode("return getAspect($T.class);\n", type).build());
-                    
-                }else{
+
+                } else {
                     classBuilder.addMethod(methodBuilder.addCode("return getAspect($T.class);\n", type).build());
 
                 }
@@ -893,6 +898,23 @@ public class DOMModuleParser {
         }
         return sw.toString();
     }
+    
+    private String getPostfix(QName name){
+        return getPostfix(name.getNamespaceURI(), name.getLocalName());
+    }
+    
+    
+    private String getPostfix(String namespace, String localName) {
+        log.info("Checking postfix for "+namespace+" "+localName);
+        for (TypePostfix postfix : postfixes) {
+            log.info("Checking postfix for "+namespace+" "+localName+ " against "+postfix);
+            if (namespace.equals(postfix.getNameSpace()) && (postfix.getLocalName() == null || localName.equals(postfix.getLocalName()))) {
+                log.info("Applying prefix: "+postfix.getPrefix()+" to "+namespace+" "+localName);
+                return postfix.getPrefix();
+            }
+        }
+        return "";
+    }
 
     private static class SourceTag {
 
@@ -938,6 +960,8 @@ public class DOMModuleParser {
     private static class TargetTag extends SourceTag {
 
         private ClassName type;
+        
+        private QName targetQName;
 
         public TargetTag() {
         }
@@ -951,6 +975,19 @@ public class DOMModuleParser {
             this.type = type;
         }
 
+        public TargetTag(ClassName type, QName targetQName) {
+            this.type = type;
+            this.targetQName = targetQName;
+        }
+
+        public TargetTag(ClassName type, QName targetQName, boolean mandatory, boolean many, String role) {
+            super(mandatory, many, role);
+            this.type = type;
+            this.targetQName = targetQName;
+        }
+        
+        
+
         public ClassName getType() {
             return type;
         }
@@ -958,6 +995,16 @@ public class DOMModuleParser {
         public void setType(ClassName type) {
             this.type = type;
         }
+
+        public QName getTargetQName() {
+            return targetQName;
+        }
+
+        public void setTargetQName(QName targetQName) {
+            this.targetQName = targetQName;
+        }
+        
+        
 
     }
 
@@ -1036,4 +1083,7 @@ public class DOMModuleParser {
 
     }
 
+    
 }
+
+
