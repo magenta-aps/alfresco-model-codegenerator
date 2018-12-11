@@ -13,21 +13,21 @@ import org.xml.sax.SAXParseException;
  *
  * @author martin
  */
-public class NotModuleException extends SAXParseException{
+public class IgnoredModuleException extends SAXParseException{
 
-    public NotModuleException(String message, Locator locator) {
+    public IgnoredModuleException(String message, Locator locator) {
         super(message, locator);
     }
 
-    public NotModuleException(String message, Locator locator, Exception e) {
+    public IgnoredModuleException(String message, Locator locator, Exception e) {
         super(message, locator, e);
     }
 
-    public NotModuleException(String message, String publicId, String systemId, int lineNumber, int columnNumber) {
+    public IgnoredModuleException(String message, String publicId, String systemId, int lineNumber, int columnNumber) {
         super(message, publicId, systemId, lineNumber, columnNumber);
     }
 
-    public NotModuleException(String message, String publicId, String systemId, int lineNumber, int columnNumber, Exception e) {
+    public IgnoredModuleException(String message, String publicId, String systemId, int lineNumber, int columnNumber, Exception e) {
         super(message, publicId, systemId, lineNumber, columnNumber, e);
     }
     

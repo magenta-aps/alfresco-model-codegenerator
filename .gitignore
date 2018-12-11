@@ -18,5 +18,8 @@ nbactions.xml
 # Ignore generated files from test project
 Tests/src/main/java/
 Tests/**/*.log
-Plugin/src/main/java/
+Tests/**/alfresco.log.*
+Tests/alf_data_dev/
+
+
 Plugin/**/*.log

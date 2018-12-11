@@ -8,12 +8,40 @@
      
     <name>Magenta Alfresco Model2Java Plugin Test Package</name>
     
+    <parent>
+        <groupId>org.alfresco.maven</groupId>
+        <artifactId>alfresco-sdk-parent</artifactId>
+        <version>2.1.1</version>
+    </parent>
+    
     <properties>
+        <!-- The following are default values for data location and Alfresco Community version.
+           Uncomment if you need to change (Note. current default version for Enterprise edition is 5.0.1)
+        <alfresco.version>5.0.d</alfresco.version>
+        <alfresco.data.location>/absolute/path/to/alf_data_dev</alfresco.data.location> -->
+        <alfresco.client.war.folder>${project.build.directory}/${project.build.finalName}-war</alfresco.client.war.folder>
+        
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <alfresco.groupId>org.alfresco</alfresco.groupId>
         <alfresco.version>5.1.g</alfresco.version>
     </properties>
+    <dependencyManagement>
+        <dependencies>
+            <!-- Setup what versions of the different Alfresco artifacts that will be used (depends on alfresco.version),
+                 so we don't have to specify version in any of the dependency definitions in our POM.
+                 For more info see:
+                    http://maven.apache.org/guides/introduction/introduction-to-dependency-mechanism.html#Importing_Dependencies
+            -->
+            <dependency>
+                <groupId>${alfresco.groupId}</groupId>
+                <artifactId>alfresco-platform-distribution</artifactId>
+                <version>${alfresco.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
      
     <dependencies>
         <dependency>
@@ -22,12 +50,12 @@
             <version>${project.version}</version>
         </dependency>
      
-        <dependency>
+<!--        <dependency>
             <groupId>org.apache.maven</groupId>
             <artifactId>maven-project</artifactId>
             <version>2.2.1</version>
             <scope>provided</scope>
-        </dependency>
+        </dependency>-->
 
         <dependency>
             <groupId>org.alfresco</groupId>
@@ -40,6 +68,55 @@
             <version>${alfresco.version}</version>
         </dependency>    
         
+        <!-- Webscripts testing dependencies -->
+        <dependency>
+            <groupId>org.alfresco</groupId>
+            <artifactId>alfresco-repository</artifactId>
+            <version>${alfresco.version}</version>
+            <classifier>tests</classifier>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.alfresco</groupId>
+            <artifactId>alfresco-remote-api</artifactId>
+            <version>${alfresco.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.alfresco</groupId>
+            <artifactId>alfresco-remote-api</artifactId>
+            <version>${alfresco.version}</version>
+            <classifier>tests</classifier>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.extensions.surf</groupId>
+            <artifactId>spring-webscripts</artifactId>
+            <version>5.1</version>
+            <classifier>tests</classifier>
+            <scope>test</scope>
+        </dependency>
+        
+        <dependency>
+            <groupId>${alfresco.groupId}</groupId>
+            <artifactId>alfresco-repository</artifactId>
+            <version>${alfresco.version}</version>
+            <classifier>h2scripts</classifier>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <scope>test</scope>
+        </dependency>
         <!--        
         <dependency>
             <groupId>org.apache.maven.shared</groupId>
@@ -54,6 +131,28 @@
                 <groupId>dk.magenta.alfresco</groupId>
                 <artifactId>model-to-java-plugin</artifactId>
                 <version>${project.version}</version>
+                <configuration>
+                    <ignoreNamespaces>
+                        <ignoreNamespace>my.new.model</ignoreNamespace>
+                        <ignoreNamespace>http://www.alfresco.org/test/dictionarydaotest1/1.0</ignoreNamespace>
+                        <ignoreNamespace>http://www.alfresco.org/test/BaseNodeServiceTest</ignoreNamespace>
+                        <ignoreNamespace>http://www.alfresco.org/test/IntegrityTest</ignoreNamespace>
+                        <ignoreNamespace>http://www.alfresco.org/test/NodeRefTestModel</ignoreNamespace>
+                        <ignoreNamespace>http://www.alfresco.org/test/cmis-query-test</ignoreNamespace>
+                        <ignoreNamespace>http://www.alfresco.org/test/dictionarytest1/1.0</ignoreNamespace>
+                        <ignoreNamespace>http://www.alfresco.org/test/encryptedPropModel/1.0</ignoreNamespace>
+                        <ignoreNamespace>http://www.alfresco.org/test/filefoldertest/1.0</ignoreNamespace>
+                        <ignoreNamespace>http://www.alfresco.org/test/getchildrentest/1.0</ignoreNamespace>
+                        <ignoreNamespace>http://www.alfresco.org/test/lucenetest</ignoreNamespace>
+                        <ignoreNamespace>http://www.alfresco.org/test/nodearchive</ignoreNamespace>
+                        <ignoreNamespace>http://www.alfresco.org/test/policycomponenttest/1.0</ignoreNamespace>
+                        <ignoreNamespace>http://www.alfresco.org/test/reencryption_test/1.0</ignoreNamespace>
+                        <ignoreNamespace>http://www.alfresco.org/test/testCMIS</ignoreNamespace>
+                        <ignoreNamespace>http://www.alfresco.org/test/versionstorebasetest/1.0</ignoreNamespace>
+                        <ignoreNamespace>http://scTestCMISModel/1.0/</ignoreNamespace>
+                        <ignoreNamespace>http://www.alfresco.org/model/solrtest/1.0</ignoreNamespace>
+                    </ignoreNamespaces>
+                </configuration>
                 <executions>
                     <execution>
                         <id>createmodel</id>

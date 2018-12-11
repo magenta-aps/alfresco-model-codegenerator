@@ -48,7 +48,7 @@ public class DOMModuleParserTest {
     public void setUp() {
         Log log = EasyMock.createMock(Log.class);
         File file = new File("src/test/java/");
-        parser = new DOMModuleParser(log, Arrays.asList(new String[]{"test.magenta.generated"}), file.getAbsolutePath(), ClassName.get(NodeBase.class), ClassName.get(Aspect.class), ClassName.get(Name.class), new ArrayList<>());
+        parser = new DOMModuleParser(log, Arrays.asList(new String[]{"test.magenta.generated"}), file.getAbsolutePath(), ClassName.get(NodeBase.class), ClassName.get(Aspect.class), ClassName.get(Name.class), new ArrayList<>(), new ArrayList<>());
     }
     
     @After

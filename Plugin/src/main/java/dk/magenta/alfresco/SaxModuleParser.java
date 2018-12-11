@@ -143,7 +143,7 @@ public class SaxModuleParser extends DefaultHandler {
     @Override
     public void startElement(String uri, String localName, String qName, org.xml.sax.Attributes attributes) throws SAXException {
         if (firstElement && !(uri.equals(DICTIONARY_URI) || localName.equals(MODEL_TAG))) {
-            throw new NotModuleException("First element was not a " + MODEL_TAG + " with namespace " + DICTIONARY_URI, null);
+            throw new IgnoredModuleException("First element was not a " + MODEL_TAG + " with namespace " + DICTIONARY_URI, null);
         }
         firstElement = false;
         log.info("Parsing element: URI: " + uri + " localName: " + localName + " qName: " + qName + " Attributes: " + attributes.getLength());

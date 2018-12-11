@@ -64,7 +64,7 @@ public class GenerateJavaMojo extends AbstractMojo {
     public static final String DICTIONARY_URI = "http://www.alfresco.org/model/dictionary/1.0";
     public static final String MODEL_TAG = "model";
     public static final String ALFRESCO_GROUPID = "org.alfresco";
-    
+
     private static final String INCLUDE_EXCLUDE_DEFAULT = "||||";
 
     @Parameter(defaultValue = "${project}", readonly = true, required = true)
@@ -75,27 +75,30 @@ public class GenerateJavaMojo extends AbstractMojo {
 
     @Parameter(defaultValue = "${project.groupId}.generated", readonly = true, required = true)
     private String packagePrefix;
-    
+
     @Parameter(defaultValue = INCLUDE_EXCLUDE_DEFAULT, readonly = true, required = false)
     private String includeGroupID;
-    
+
     @Parameter(defaultValue = INCLUDE_EXCLUDE_DEFAULT, readonly = true, required = false)
     private String includeArtifactID;
-    
+
 //    @Parameter(defaultValue = INCLUDE_EXCLUDE_DEFAULT, readonly = true, required = false)
 //    private String includeFiles;
-    
     @Parameter(defaultValue = INCLUDE_EXCLUDE_DEFAULT, readonly = true, required = false)
     private String excludeGroupID;
-    
+
     @Parameter(defaultValue = INCLUDE_EXCLUDE_DEFAULT, readonly = true, required = false)
     private String excludeArtifactID;
-    
+
     @Parameter(defaultValue = INCLUDE_EXCLUDE_DEFAULT, readonly = true, required = false)
     private String excludeFiles;
 
+    @Parameter
+    private List<String> ignoreNamespaces = new ArrayList<>();
+
+    @Parameter
     private List<TypePostfix> postfixes = new ArrayList<>();
-    
+
     @Component(hint = "maven3")
     private DependencyGraphBuilder dependencyGraphBuilder;
 
@@ -111,8 +114,8 @@ public class GenerateJavaMojo extends AbstractMojo {
         nameAnnotation = ClassName.get(packagePrefix, "Name");
 
         List<String> packagePrefixes = Arrays.asList(packagePrefix.split("\\."));
-        DOMModuleParser parser = new DOMModuleParser(getLog(), packagePrefixes, project.getBuild().getSourceDirectory(), baseNode, baseAspect, nameAnnotation, postfixes);
-                                    
+        DOMModuleParser parser = new DOMModuleParser(getLog(), packagePrefixes, project.getBuild().getSourceDirectory(), baseNode, baseAspect, nameAnnotation, postfixes, ignoreNamespaces);
+
         // If you want to filter out certain dependencies.
         //ArtifactFilter artifactFilter = new IncludesArtifactFilter(Arrays.asList(new String[]{"groupId:artifactId:version"}));
         ProjectBuildingRequest buildingRequest = new DefaultProjectBuildingRequest(session.getProjectBuildingRequest());
@@ -154,66 +157,67 @@ public class GenerateJavaMojo extends AbstractMojo {
                         ArtifactParser finder = new ArtifactParser(zipfs.getPathMatcher("glob:*.{xml}"), parser);
                         Files.walkFileTree(path, finder);
                         List<Path> parsedFiles = finder.getParsedFiles();
-                        if(parsedFiles != null && !parsedFiles.isEmpty()){
-                            getLog().info("Parsed artifact: "+atf);
-                            for(Path parsedFile : parsedFiles){
-                                getLog().info("Parsed file "+parsedFile.toString());
+                        if (parsedFiles != null && !parsedFiles.isEmpty()) {
+                            getLog().info("Parsed artifact: " + atf);
+                            for (Path parsedFile : parsedFiles) {
+                                getLog().info("Parsed file " + parsedFile.toString());
                             }
                         }
                     }
 
                 }
+                parser.saveFiles();
             }
         } catch (Exception e) {
             e.printStackTrace();
 
         }
     }
-    
-    protected boolean includeFile(Path path){
+
+    protected boolean includeFile(Path path) {
         String filename = path.getFileName().toString();
         return !filename.equalsIgnoreCase(excludeFiles);
     }
 
     protected boolean includeArtifact(Artifact artifact) {
         boolean include = true;
-        
-        if(!excludeGroupID.equals(INCLUDE_EXCLUDE_DEFAULT)){
+
+        if (!excludeGroupID.equals(INCLUDE_EXCLUDE_DEFAULT)) {
             Pattern excludeGroupPattern = wildcardPattern(excludeGroupID);
-            if(artifact.getGroupId().matches(excludeGroupPattern.pattern())){
+            if (artifact.getGroupId().matches(excludeGroupPattern.pattern())) {
                 include = false;
             }
         }
-        
-        if(!excludeArtifactID.equals(INCLUDE_EXCLUDE_DEFAULT)){
+
+        if (!excludeArtifactID.equals(INCLUDE_EXCLUDE_DEFAULT)) {
             Pattern excludeArtifactPattern = wildcardPattern(includeArtifactID);
-            if(artifact.getArtifactId().matches(excludeArtifactPattern.pattern())){
+            if (artifact.getArtifactId().matches(excludeArtifactPattern.pattern())) {
                 include = false;
             }
         }
-        
+
         boolean includeActive = includeGroupID.equals(INCLUDE_EXCLUDE_DEFAULT) && !includeArtifactID.equals(INCLUDE_EXCLUDE_DEFAULT);
         boolean includeG = true;
         boolean includeA = true;
-        
-        if(!includeGroupID.equals(INCLUDE_EXCLUDE_DEFAULT)){
+
+        if (!includeGroupID.equals(INCLUDE_EXCLUDE_DEFAULT)) {
             Pattern includeGroupPattern = wildcardPattern(includeGroupID);
             includeG = artifact.getGroupId().matches(includeGroupPattern.pattern());
         }
-        
-        if(!includeArtifactID.equals(INCLUDE_EXCLUDE_DEFAULT)){
+
+        if (!includeArtifactID.equals(INCLUDE_EXCLUDE_DEFAULT)) {
             Pattern includeArtifactPattern = wildcardPattern(includeArtifactID);
             includeA = artifact.getArtifactId().matches(includeArtifactPattern.pattern());
         }
-        
-        if(includeActive){
+
+        if (includeActive) {
             include = includeG && includeA;
         }
-        
+
         return include;
     }
-    
-    protected Pattern wildcardPattern(String wildcardPattern){
+
+    protected Pattern wildcardPattern(String wildcardPattern) {
         return Pattern.compile(wildcardPattern.replaceAll("//*", ".*"));
     }
 
@@ -237,7 +241,6 @@ public class GenerateJavaMojo extends AbstractMojo {
                 try {
                     InputStream in = Files.newInputStream(file, READ);
 
-                    
                     InputStream precheckStream = Files.newInputStream(file, READ);
 
                     //The SAX parser spends about 500ms pr xml file on downloading xsd's and other resources.
@@ -253,13 +256,15 @@ public class GenerateJavaMojo extends AbstractMojo {
                                     long time = System.currentTimeMillis();
                                     try {
                                         parser.execute(in);
-                                        parser.saveFiles();
+
                                         parsedFiles.add(file);
+                                    } catch (IgnoredModuleException ex) {
+                                        getLog().info("Ignoring "+file+" because it is part of the ignored namespaces list", ex);
                                     } catch (IOException | ParserConfigurationException | SAXException ex) {
-                                        getLog().warn("Could not parse file: ",ex);
+                                        getLog().warn("Could not parse file: ", ex);
                                     } finally {
                                         getLog().info("Parsing took " + (System.currentTimeMillis() - time) + " for " + file);
-                                        
+
                                     }
 //                                   try {
 //                                        saxParser.parse(in, moduleHandler);
@@ -282,8 +287,12 @@ public class GenerateJavaMojo extends AbstractMojo {
             }
         }
 
-        public List<Path> getParsedFiles(){
+        public List<Path> getParsedFiles() {
             return parsedFiles;
+        }
+
+        public void save() throws IOException {
+            parser.saveFiles();
         }
 
         // Invoke the pattern matching
@@ -327,20 +336,20 @@ public class GenerateJavaMojo extends AbstractMojo {
         generateClass("/dk/magenta/alfresco/anchor/NodeBase.java", generationDir, "NodeBase.java");
         generateClass("/dk/magenta/alfresco/anchor/Aspect.java", generationDir, "Aspect.java");
         generateClass("/dk/magenta/alfresco/anchor/Name.java", generationDir, "Name.java");
-        
+
     }
-    
-    protected void generateClass(String resourceName, File generationDir, String targetName) throws FileNotFoundException, IOException{
+
+    protected void generateClass(String resourceName, File generationDir, String targetName) throws FileNotFoundException, IOException {
         File targetFile = new File(generationDir, targetName);
-        try(PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(targetFile), Charset.forName("UTF-8"))); BufferedReader in = new BufferedReader(new InputStreamReader(getClass().getResourceAsStream(resourceName), Charset.forName("UTF-8")))){
-           while(in.ready()){
-               String line = in.readLine();
-               if(line.matches("^\\s*package (.+);")){
-                   out.println("package "+packagePrefix+";");
-               }else{
-                   out.println(line);
-               }
-           }
+        try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(targetFile), Charset.forName("UTF-8"))); BufferedReader in = new BufferedReader(new InputStreamReader(getClass().getResourceAsStream(resourceName), Charset.forName("UTF-8")))) {
+            while (in.ready()) {
+                String line = in.readLine();
+                if (line.matches("^\\s*package (.+);")) {
+                    out.println("package " + packagePrefix + ";");
+                } else {
+                    out.println(line);
+                }
+            }
         }
     }
 //    protected CodeBlock getPackagesCodeBlock(){
