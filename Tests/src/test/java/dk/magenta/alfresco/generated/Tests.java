@@ -21,7 +21,7 @@ import org.alfresco.service.cmr.repository.StoreRef;
  */
 public class Tests extends BaseWebScriptTest {
 
-    private final ServiceRegistry serviceRegistry = (ServiceRegistry) getServer().getApplicationContext().getBean("ServiceRegistry");
+    private final ServiceRegistry serviceRegistry = (ServiceRegistry) getServer().getApplicationContext().getBean("ServiceRegistry", ServiceRegistry.class);
 
     @Override
     protected void setUp() throws Exception {
@@ -37,20 +37,22 @@ public class Tests extends BaseWebScriptTest {
     }
     
     public void testWorkspaces() throws Exception{
-        
+        List<StoreRef> baseRefs = serviceRegistry.getNodeService().getStores();
         List<StoreRef> generatedRefsNodeBase = AuthenticationUtil.runAs(new AuthenticationUtil.RunAsWork< List<StoreRef>>()
          {
+            @Override
             public  List<StoreRef> doWork() throws Exception
             {
                return NodeBase.getStores();
                
             }
-         }, AuthenticationUtil.getSystemUserName());
+         }, AuthenticationUtil.getFullyAuthenticatedUser());
         
-        List<StoreRef> baseRefs = serviceRegistry.getNodeService().getStores();
+        
         containsSameElements(baseRefs, generatedRefsNodeBase);
 
     }
+    
     
     public void testContainsSameElement(){
         //Completely equal

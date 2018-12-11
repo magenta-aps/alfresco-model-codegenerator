@@ -83,9 +83,14 @@ public class NodeBase {
     protected static ApplicationContext getApplicationContext() {
         return ApplicationContextHelper.getApplicationContext();
     }
+    
+    protected static ServiceRegistry getServiceRegistry() {
+        return getApplicationContext().getBean(ServiceRegistry.class);
+    }
 
     protected static NodeService getNodeService() {
-        return getApplicationContext().getBean("nodeService", NodeService.class);
+        return getServiceRegistry().getNodeService();
+        //return getApplicationContext().getBean("nodeService", NodeService.class);
     }
 
     protected <T> List<T> getChildAssociations(Class<T> typeToReturn, QName assocName) {
