@@ -5,6 +5,8 @@
  */
 package dk.magenta.alfresco.generated;
 
+import dk.magenta.alfresco.generated.org.alfresco.model.content._1_0.Folder;
+import dk.magenta.alfresco.generated.org.alfresco.model.system._1_0.Base;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -13,6 +15,7 @@ import junit.framework.AssertionFailedError;
 import org.alfresco.repo.security.authentication.AuthenticationUtil;
 import org.alfresco.repo.web.scripts.BaseWebScriptTest;
 import org.alfresco.service.ServiceRegistry;
+import org.alfresco.service.cmr.repository.NodeRef;
 import org.alfresco.service.cmr.repository.StoreRef;
 
 /**
@@ -21,12 +24,17 @@ import org.alfresco.service.cmr.repository.StoreRef;
  */
 public class Tests extends BaseWebScriptTest {
 
+    public static final String DICTIONARY_PATH = "/app:company_home/app:dictionary";
+    
     private final ServiceRegistry serviceRegistry = (ServiceRegistry) getServer().getApplicationContext().getBean("ServiceRegistry", ServiceRegistry.class);
-
+    private NodeFactory factory;
+    
     @Override
     protected void setUp() throws Exception {
         super.setUp();
         AuthenticationUtil.setAdminUserAsFullyAuthenticatedUser();
+        factory = new NodeFactory();
+        factory.setServiceRegistry(serviceRegistry);
 //        TestUtils.wipeData(serviceRegistry);
 //        TestUtils.setupSimpleFlow(serviceRegistry);
     }
@@ -37,20 +45,26 @@ public class Tests extends BaseWebScriptTest {
     }
     
     public void testWorkspaces() throws Exception{
+        AuthenticationUtil.setAdminUserAsFullyAuthenticatedUser();
         List<StoreRef> baseRefs = serviceRegistry.getNodeService().getStores();
-        List<StoreRef> generatedRefsNodeBase = AuthenticationUtil.runAs(new AuthenticationUtil.RunAsWork< List<StoreRef>>()
-         {
-            @Override
-            public  List<StoreRef> doWork() throws Exception
-            {
-               return NodeBase.getStores();
-               
-            }
-         }, AuthenticationUtil.getFullyAuthenticatedUser());
-        
-        
+        List<StoreRef> generatedRefsNodeBase = factory.getStores();
         containsSameElements(baseRefs, generatedRefsNodeBase);
 
+    }
+    
+    public void testGetCompanyHome(){
+        StoreRef workspaceRef = new StoreRef("workspace", "SpacesStore");
+        NodeRef rootNodeRef = serviceRegistry.getNodeService().getRootNode(workspaceRef);
+        Base rootNode = factory.getNode(Base.class, rootNodeRef);
+        assertEquals(Base.class, rootNode.getClass());
+        assertEquals(workspaceRef.getProtocol(), rootNode.getReferenceableAspect().getStore_protocol());
+        assertEquals(workspaceRef.getIdentifier(), rootNode.getReferenceableAspect().getStore_identifier());
+        
+        
+        List<NodeRef> companyHome = serviceRegistry.getSearchService().selectNodes(rootNodeRef, DICTIONARY_PATH, null, serviceRegistry.getNamespaceService(), true);
+        assertEquals(1, companyHome.size());
+        Folder folder = factory.getNode(Folder.class, companyHome.get(0));
+        assertEquals("Data Dictionary", folder.getName());
     }
     
     

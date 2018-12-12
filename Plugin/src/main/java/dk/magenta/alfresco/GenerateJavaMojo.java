@@ -336,7 +336,7 @@ public class GenerateJavaMojo extends AbstractMojo {
         generateClass("/dk/magenta/alfresco/anchor/NodeBase.java", generationDir, "NodeBase.java");
         generateClass("/dk/magenta/alfresco/anchor/Aspect.java", generationDir, "Aspect.java");
         generateClass("/dk/magenta/alfresco/anchor/Name.java", generationDir, "Name.java");
-
+        generateClass("/dk/magenta/alfresco/anchor/NodeFactory.java", generationDir, "NodeFactory.java");
     }
 
     protected void generateClass(String resourceName, File generationDir, String targetName) throws FileNotFoundException, IOException {

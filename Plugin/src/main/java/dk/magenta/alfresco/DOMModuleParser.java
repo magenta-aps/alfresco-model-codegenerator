@@ -16,6 +16,7 @@ import com.squareup.javapoet.TypeSpec;
 import static dk.magenta.alfresco.GenerateJavaMojo.DICTIONARY_URI;
 import dk.magenta.alfresco.anchor.Aspect;
 import dk.magenta.alfresco.anchor.NodeBase;
+import dk.magenta.alfresco.anchor.NodeFactory;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -54,7 +55,7 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
-
+//DefaultTypeConverter.INSTANCE.convert(<TargetType>.class, <value>)
 /**
  *
  * @author martin
@@ -251,9 +252,9 @@ public class DOMModuleParser {
             if (matches(typeNode, DICTIONARY_URI, TYPE_TAG)) {
                 QName typeQName = getNameAttribute(typeNode);
 
-                List<String> javaTypePackages = NodeBase.getPackages(packagePrefixes, typeQName.getNamespaceURI());
-                String packageName = NodeBase.getPackage(javaTypePackages);
-                ClassName clazz = ClassName.get(packageName, capitalize(typeQName.getLocalName()+getPostfix(typeQName)));
+                List<String> javaTypePackages = NodeFactory.getPackages(packagePrefixes, typeQName.getNamespaceURI());
+                String packageName = NodeFactory.getPackage(javaTypePackages);
+                ClassName clazz = ClassName.get(packageName, NodeFactory.capitalize(typeQName.getLocalName()+getPostfix(typeQName)));
                 TypeSpec.Builder javaClassBuilder = TypeSpec.classBuilder(clazz).addModifiers(Modifier.PUBLIC);
 
                 //Add any methods created by parsing other types, such as bidirectional association methods
@@ -322,11 +323,11 @@ public class DOMModuleParser {
             if (matches(aspectNode, DICTIONARY_URI, ASPECT_TAG)) {
                 QName aspectName = getNameAttribute(aspectNode);
 
-                List<String> javaTypePackages = NodeBase.getPackages(packagePrefixes, aspectName.getNamespaceURI());
-                String packageName = NodeBase.getPackage(javaTypePackages);
-                String className = capitalizeAndSanitize(aspectName.getLocalName());
+                List<String> javaTypePackages = NodeFactory.getPackages(packagePrefixes, aspectName.getNamespaceURI());
+                String packageName = NodeFactory.getPackage(javaTypePackages);
+                String className = NodeFactory.capitalizeAndSanitize(aspectName.getLocalName());
                 ClassName aspectClass = ClassName.get(packageName, className+getPostfix(aspectName));
-                ClassName aspectImplClass = ClassName.get(packageName, className + NodeBase.ASPECT_POSTFIX+getPostfix(aspectName));
+                ClassName aspectImplClass = ClassName.get(packageName, className + NodeFactory.ASPECT_POSTFIX+getPostfix(aspectName));
                 TypeSpec.Builder javaInterfaceBuilder = TypeSpec.interfaceBuilder(aspectClass).addModifiers(Modifier.PUBLIC);
                 TypeSpec.Builder javaClassBuilder = TypeSpec.classBuilder(aspectImplClass).addModifiers(Modifier.PUBLIC);
 
@@ -386,7 +387,7 @@ public class DOMModuleParser {
                     }
                 }
                 if (parent != null) {
-                    ClassName parentImplClass = ClassName.get(parent.packageName(), parent.simpleName() + NodeBase.ASPECT_POSTFIX);
+                    ClassName parentImplClass = ClassName.get(parent.packageName(), parent.simpleName() + NodeFactory.ASPECT_POSTFIX);
                     javaInterfaceBuilder.addSuperinterface(parent);
                     javaClassBuilder.superclass(parentImplClass);
                 } else {
@@ -448,8 +449,8 @@ public class DOMModuleParser {
                 }
 
                 try {
-                    String propertyFieldName = sanitize(classQName.getLocalName())+getPostfix(classQName);
-                    String getterMethodName = capitalizeAndSanitize(classQName.getLocalName())+getPostfix(classQName);
+                    String propertyFieldName = NodeFactory.sanitize(classQName.getLocalName())+getPostfix(classQName);
+                    String getterMethodName = NodeFactory.capitalizeAndSanitize(classQName.getLocalName())+getPostfix(classQName);
 
                     Class methodReturnType = resolveType(fieldType.getNamespaceURI(), fieldType.getLocalName());
                     if (interfaceBuilder != null) {
@@ -549,8 +550,8 @@ public class DOMModuleParser {
 
     private void addOutboundMethod(TypeSpec.Builder interfaceBuilder, TypeSpec.Builder classBuilder, QName assocName, boolean many, ClassName targetClass, boolean isChild) {
         ClassName list = ClassName.get("java.util", "List");
-        String methodName = "get" + capitalizeAndSanitize(assocName.getLocalName()) + getPostfix(assocName) + (isChild ? "Child" : "Target");
-        String associationFieldName = sanitize(assocName.getLocalName() +getPostfix(assocName) + (isChild ? "Child" : "Target") + "Association");
+        String methodName = "get" + NodeFactory.capitalizeAndSanitize(assocName.getLocalName()) + /*getPostfix(assocName) + */(isChild ? "Child" : "Target");
+        String associationFieldName = NodeFactory.sanitize(assocName.getLocalName() +getPostfix(assocName) + (isChild ? "Child" : "Target") + "Association");
         //targetClass = ClassName.get(targetClass.packageName(), targetClass.simpleName()+getPostfix(assocName));
         TypeName listOfType = ParameterizedTypeName.get(list, targetClass);
         
@@ -593,7 +594,7 @@ public class DOMModuleParser {
         ClassName list = ClassName.get("java.util", "List");
         TypeName listOfType = ParameterizedTypeName.get(list, targetClass);
         TypeName returnType;
-        String methodName = "get" + capitalizeAndSanitize(assocName.getLocalName()) + targetClass.simpleName() + getPostfix(assocName) + (isChild ? "Parent" : "Source");
+        String methodName = "get" + NodeFactory.capitalizeAndSanitize(assocName.getLocalName()) + targetClass.simpleName() +/* getPostfix(assocName) + */(isChild ? "Parent" : "Source");
         if (many) {
             returnType = listOfType;
         } else {
@@ -605,14 +606,14 @@ public class DOMModuleParser {
     }
 
     private FieldSpec.Builder getInputMethodField(TypeSpec.Builder interfaceBuilder, TypeSpec.Builder classBuilder, MethodSpec.Builder method, QName assocName, boolean many, ClassName targetClass, boolean isChild) {
-        String associationFieldName = sanitize(assocName.getLocalName() + targetClass.simpleName() + getPostfix(assocName) + (isChild ? "Parent" : "Source") + "Association");
+        String associationFieldName = NodeFactory.sanitize(assocName.getLocalName() + targetClass.simpleName() + getPostfix(assocName) + (isChild ? "Parent" : "Source") + "Association");
         FieldSpec.Builder field = FieldSpec.builder(QName.class, associationFieldName, Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL).initializer("$T.createQName($S, $S)", QName.class, assocName.getNamespaceURI(), assocName.getLocalName()).addJavadoc("Originates at $L", targetClass.toString());
         return field;
     }
 
     private MethodSpec.Builder decorateInboundMethod(TypeSpec.Builder interfaceBuilder, TypeSpec.Builder classBuilder, MethodSpec.Builder method, QName assocName, boolean many, ClassName targetClass, boolean isChild) {
         ClassName list = ClassName.get("java.util", "List");
-        String associationFieldName = sanitize(assocName.getLocalName() + targetClass.simpleName() + getPostfix(assocName) + (isChild ? "Parent" : "Source") + "Association");
+        String associationFieldName = NodeFactory.sanitize(assocName.getLocalName() + targetClass.simpleName() + getPostfix(assocName) + (isChild ? "Parent" : "Source") + "Association");
         TypeName listOfType = ParameterizedTypeName.get(list, targetClass);
 
         if (interfaceBuilder != null) {
@@ -704,7 +705,7 @@ public class DOMModuleParser {
                         String targetClass = getNodeValue(targetChild);
                         QName className = getQName(targetClass);
                         toReturn.setTargetQName(className);
-                        toReturn.setType(ClassName.get(NodeBase.getPackage(NodeBase.getPackages(packagePrefixes, className.getNamespaceURI())), capitalizeAndSanitize(className.getLocalName())));
+                        toReturn.setType(ClassName.get(NodeFactory.getPackage(NodeFactory.getPackages(packagePrefixes, className.getNamespaceURI())), NodeFactory.capitalizeAndSanitize(className.getLocalName())));
                     default:
                         log.debug("Encountered unknown tag in association:\n" + nodeToString(targetChild));
 
@@ -722,7 +723,7 @@ public class DOMModuleParser {
             if (matches(aspectNode, DICTIONARY_URI, ASPECT_TAG)) {
                 QName classQName = getQName(getNodeValue(aspectNode));
                 TypeName type = classNameFromQName(classQName);
-                MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder("get" + capitalizeAndSanitize(classQName.getLocalName()) + "Aspect").returns(type).addModifiers(Modifier.PUBLIC);
+                MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder("get" + NodeFactory.capitalizeAndSanitize(classQName.getLocalName()) + "Aspect").returns(type).addModifiers(Modifier.PUBLIC);
                 if (interfaceBuilder != null) {
                     interfaceBuilder.addMethod(methodBuilder.build().toBuilder().addModifiers(Modifier.ABSTRACT).build());
                     classBuilder.addMethod(methodBuilder.addCode("return getAspect($T.class);\n", type).build());
@@ -738,7 +739,7 @@ public class DOMModuleParser {
     }
 
     protected ClassName classNameFromQName(QName name) {
-        return ClassName.get(NodeBase.getPackage(NodeBase.getPackages(packagePrefixes, name.getNamespaceURI())), capitalizeAndSanitize(name.getLocalName()));
+        return ClassName.get(NodeFactory.getPackage(NodeFactory.getPackages(packagePrefixes, name.getNamespaceURI())), NodeFactory.capitalizeAndSanitize(name.getLocalName()));
     }
 
     protected String getNodeValue(Node titleNode) {
@@ -815,18 +816,7 @@ public class DOMModuleParser {
 //        }
 //        return packageString;
 //    }
-    public static String capitalize(String toCapitalize) {
-        return toCapitalize.substring(0, 1).toUpperCase() + toCapitalize.substring(1);
-    }
 
-    public static String sanitize(String toSanitize) {
-        return toSanitize.replaceAll("[-]", "_");
-    }
-
-    public static String capitalizeAndSanitize(String toHandle) {
-        return capitalize(sanitize(toHandle));
-
-    }
 
     public boolean matches(Node node, String uri, String localName) {
         return uri.equals(node.getNamespaceURI()) && localName.equals(node.getLocalName());
