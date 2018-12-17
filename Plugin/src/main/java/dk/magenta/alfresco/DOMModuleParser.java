@@ -7,6 +7,7 @@ package dk.magenta.alfresco;
 
 import com.squareup.javapoet.AnnotationSpec;
 import com.squareup.javapoet.ClassName;
+import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.FieldSpec;
 import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.MethodSpec;
@@ -20,6 +21,7 @@ import dk.magenta.alfresco.anchor.NodeFactory;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.Serializable;
 import java.io.StringWriter;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -450,19 +452,32 @@ public class DOMModuleParser {
 
                 try {
                     String propertyFieldName = NodeFactory.sanitize(classQName.getLocalName())+getPostfix(classQName);
-                    String getterMethodName = NodeFactory.capitalizeAndSanitize(classQName.getLocalName())+getPostfix(classQName);
+                    String methodName = NodeFactory.capitalizeAndSanitize(classQName.getLocalName())+getPostfix(classQName);
+                    String setterParameterName = fieldType.getLocalName()+"Param";
 
                     Class methodReturnType = resolveType(fieldType.getNamespaceURI(), fieldType.getLocalName());
+                    CodeBlock setterMethodCode;
+                    if(methodReturnType.equals(Object.class)){
+                        setterMethodCode = CodeBlock.of("$[setProperty($L, $T.class.cast($L));$]\n", propertyFieldName, Serializable.class, setterParameterName);
+                    }else{
+                        setterMethodCode = CodeBlock.of("$[setProperty($L, $L);$]\n", propertyFieldName, setterParameterName);
+                    }
+                        
+                    MethodSpec.Builder getterMethod = MethodSpec.methodBuilder("get" + methodName).addModifiers(Modifier.PUBLIC).returns(methodReturnType);
+                    MethodSpec.Builder setterMethod = MethodSpec.methodBuilder("set" + methodName).addModifiers(Modifier.PUBLIC).addParameter(methodReturnType, setterParameterName);
                     if (interfaceBuilder != null) {
-                        interfaceBuilder.addMethod(MethodSpec.methodBuilder("get" + getterMethodName).addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT).returns(methodReturnType).build());
+                        interfaceBuilder.addMethod(getterMethod.build().toBuilder().addModifiers(Modifier.ABSTRACT).build());
+                        interfaceBuilder.addMethod(setterMethod.build().toBuilder().addModifiers(Modifier.ABSTRACT).build());
                     }
                     classBuilder.addField(FieldSpec.builder(QName.class, propertyFieldName, Modifier.PUBLIC, Modifier.FINAL, Modifier.STATIC).initializer("$T.createQName($S, $S)", QName.class, classQName.getNamespaceURI(), classQName.getLocalName()).build());
-                    MethodSpec.Builder getterMethod = MethodSpec.methodBuilder("get" + getterMethodName).addModifiers(Modifier.PUBLIC).returns(methodReturnType)
-                            .addCode("$[return ($T)getNodeService().getProperty(getNodeRef(), $L)$];\n", methodReturnType, propertyFieldName);
+                    getterMethod.addCode("$[return ($T)getNodeService().getProperty(getNodeRef(), $L)$];\n", methodReturnType, propertyFieldName);
+                    setterMethod.addCode(setterMethodCode);
                     if (interfaceBuilder != null) {
                         getterMethod.addAnnotation(Override.class);
+                        setterMethod.addAnnotation(Override.class);
                     }
                     classBuilder.addMethod(getterMethod.build());
+                    classBuilder.addMethod(setterMethod.build());
                 } catch (Exception ex) {
                     throw new RuntimeException("Failed to parse property:\n" + nodeToString(propertyNode), ex);//Do something less runtime
                 }
@@ -867,7 +882,7 @@ public class DOMModuleParser {
                 case "period":
                     return Period.class;
                 case "any":
-                    return Object.class; //This should likely be replaced with the generators base class maybe?
+                    return Object.class;
                 default:
                     return null;
 

@@ -6,7 +6,9 @@
 package dk.magenta.alfresco.generated;
 
 import dk.magenta.alfresco.generated.org.alfresco.model.content._1_0.Folder;
+import dk.magenta.alfresco.generated.org.alfresco.model.system._1_0.Aspect_rootClass;
 import dk.magenta.alfresco.generated.org.alfresco.model.system._1_0.Base;
+import dk.magenta.alfresco.generated.org.alfresco.model.system._1_0.Store_root;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -55,17 +57,21 @@ public class Tests extends BaseWebScriptTest {
     public void testGetCompanyHome(){
         StoreRef workspaceRef = new StoreRef("workspace", "SpacesStore");
         NodeRef rootNodeRef = serviceRegistry.getNodeService().getRootNode(workspaceRef);
-        Base rootNode = factory.getNode(Base.class, rootNodeRef);
-        assertEquals(Base.class, rootNode.getClass());
+        Base rootNode = factory.getNode(rootNodeRef, Base.class);
+        assertEquals(Store_root.class, rootNode.getClass());
+        assertEquals(Store_root.class.getAnnotation(Name.class).namespace(), rootNode.getQName().getNamespaceURI());
+        assertEquals(Store_root.class.getAnnotation(Name.class).localName(), rootNode.getQName().getLocalName());
         assertEquals(workspaceRef.getProtocol(), rootNode.getReferenceableAspect().getStore_protocol());
         assertEquals(workspaceRef.getIdentifier(), rootNode.getReferenceableAspect().getStore_identifier());
-        
+        Store_root castRootNode = (Store_root)rootNode;
+        assertEquals(Aspect_rootClass.class, castRootNode.getAspect_rootAspect().getClass());
         
         List<NodeRef> companyHome = serviceRegistry.getSearchService().selectNodes(rootNodeRef, DICTIONARY_PATH, null, serviceRegistry.getNamespaceService(), true);
         assertEquals(1, companyHome.size());
-        Folder folder = factory.getNode(Folder.class, companyHome.get(0));
+        Folder folder = factory.getNode(companyHome.get(0), Folder.class);
         assertEquals("Data Dictionary", folder.getName());
     }
+    
     
     
     public void testContainsSameElement(){
@@ -94,6 +100,8 @@ public class Tests extends BaseWebScriptTest {
     }
     
     public static <T> void containsSameElements(Collection<? extends T> c1, Collection<? extends T> c2){
+        c1 = new ArrayList<>(c1);
+        c2 = new ArrayList<>(c2);
         assertEquals(c1.size(), c2.size());
         //assertTrue(c1.containsAll(c2) && c2.containsAll(c1));
         while(c1.size() > 0){

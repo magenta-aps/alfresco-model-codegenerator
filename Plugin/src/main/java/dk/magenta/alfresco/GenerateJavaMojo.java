@@ -259,7 +259,7 @@ public class GenerateJavaMojo extends AbstractMojo {
 
                                         parsedFiles.add(file);
                                     } catch (IgnoredModuleException ex) {
-                                        getLog().info("Ignoring "+file+" because it is part of the ignored namespaces list", ex);
+                                        getLog().info("Ignoring "+file+" because it is part of the ignored namespaces list");
                                     } catch (IOException | ParserConfigurationException | SAXException ex) {
                                         getLog().warn("Could not parse file: ", ex);
                                     } finally {

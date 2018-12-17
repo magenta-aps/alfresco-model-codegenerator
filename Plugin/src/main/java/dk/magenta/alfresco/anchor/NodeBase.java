@@ -5,26 +5,19 @@
  */
 package dk.magenta.alfresco.anchor;
 
+import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Scanner;
 import java.util.Set;
-import java.util.regex.Pattern;
-import org.alfresco.error.AlfrescoRuntimeException;
 import org.alfresco.service.ServiceRegistry;
 import org.alfresco.service.cmr.repository.AssociationRef;
 import org.alfresco.service.cmr.repository.ChildAssociationRef;
 import org.alfresco.service.cmr.repository.NodeRef;
 import org.alfresco.service.cmr.repository.NodeService;
-import org.alfresco.service.cmr.repository.StoreRef;
 import org.alfresco.service.namespace.QName;
-import org.springframework.context.ApplicationContext;
-import org.springframework.web.context.ContextLoader;
 
 /**
  *
@@ -76,7 +69,7 @@ public class NodeBase {
     public <T> T getAspect(Class<T> aspectClass){
         Name name = aspectClass.getAnnotation(Name.class);
         QName aspectQName = QName.createQName(name.namespace(), name.localName());
-        return (T)factory.newAspect(aspectQName, nodeRef);
+        return aspectClass.cast(factory.newAspect(aspectQName, nodeRef));
     }
     
     public boolean hasAspect(Class<? extends Object> aspectClass){
@@ -87,10 +80,6 @@ public class NodeBase {
     
     public boolean hasAspect(QName aspect){
         return getNodeService().getAspects(nodeRef).contains(aspect);
-    }
-    
-    protected static ApplicationContext getApplicationContext() {
-        return ContextLoader.getCurrentWebApplicationContext();
     }
     
     protected ServiceRegistry getServiceRegistry() {
@@ -105,7 +94,7 @@ public class NodeBase {
         List<T> toReturn = new ArrayList<>();
         List<ChildAssociationRef> refs = getNodeService().getChildAssocs(getNodeRef(), assocName, null);
         for (ChildAssociationRef ref : refs) {
-            toReturn.add((T) factory.newType(ref.getChildRef()));
+            toReturn.add((T) factory.getNode(ref.getChildRef()));
         }
         return toReturn;
     }
@@ -114,7 +103,7 @@ public class NodeBase {
         List<T> toReturn = new ArrayList<>();
         List<ChildAssociationRef> refs = getNodeService().getParentAssocs(getNodeRef(), assocName, null);
         for (ChildAssociationRef ref : refs) {
-            toReturn.add((T) factory.newType(ref.getParentRef()));
+            toReturn.add((T) factory.getNode(ref.getParentRef()));
         }
         return toReturn;
     }
@@ -123,7 +112,7 @@ public class NodeBase {
         List<T> toReturn = new ArrayList<>();
         List<AssociationRef> refs = getNodeService().getTargetAssocs(getNodeRef(), getQName());
         for (AssociationRef ref : refs) {
-            toReturn.add((T) factory.newType(ref.getTargetRef()));
+            toReturn.add((T) factory.getNode(ref.getTargetRef()));
         }
         return toReturn;
     }
@@ -132,9 +121,13 @@ public class NodeBase {
         List<T> toReturn = new ArrayList<>();
         List<AssociationRef> refs = getNodeService().getSourceAssocs(getNodeRef(), getQName());
         for (AssociationRef ref : refs) {
-            toReturn.add((T) factory.newType(ref.getSourceRef()));
+            toReturn.add((T) factory.getNode(ref.getSourceRef()));
         }
         return toReturn;
+    }
+    
+    protected <T extends Serializable> void setProperty(QName propertyName, T value){
+        getNodeService().setProperty(nodeRef, qName, value);
     }
     
     public static enum Store {
@@ -148,8 +141,78 @@ public class NodeBase {
             this.protocol = protocol;
             this.identifier =  identifier;
         }
-        
-        
-        
     }
+    
+//    public static abstract class PropertiesProxy{
+//        private Map<QName, Serializable> properties = new HashMap<>();
+//       
+//        
+//        protected void setProperty(QName key, Serializable value){
+//            properties.put(key, value);
+//        }
+//
+//        public Map<QName, Serializable> getProperties() {
+//            return Collections.unmodifiableMap(properties);
+//        }
+//
+//    }
+//    
+//    public static interface PropertiesSetter{
+//        public void set();
+//    }
+//    
+//    public static class PropertiesSetterImpl implements PropertiesSetter{
+//        private final NodeRef targetRef;
+//        private final NodeService service;
+//        private final Map<QName, Serializable> properties;
+//
+//        public PropertiesSetterImpl(NodeRef targetRef, NodeService service, Map<QName, Serializable> properties) {
+//            this.targetRef = targetRef;
+//            this.service = service;
+//            this.properties = properties;
+//        }
+//        
+//        
+//        @Override
+//        public void set(){
+//            service.addProperties(targetRef, properties);   
+//        }
+//    }
+//    
+//    public static interface NodeCreator<T extends NodeBase, P extends NodeBase>{
+//        public T create();
+//    }
+//    
+//    public static class NodeCreatorImpl<T extends NodeBase, P extends NodeBase> implements NodeCreator<T, P>{
+//        private final NodeRef parentRef;
+//        private final NodeService service;
+//        private final QName newNodeType;
+//        private final QName assocType;
+//        private final QName nodeName;
+//        private final Map<QName, Serializable> properties;
+//        
+//        
+//        public NodeCreatorImpl(Class<T> newTypeClass, QName assocType, String nodeName, P parent, NodeService service, Map<QName, Serializable> properties){
+//            this(NodeFactory.getQNameFromClass(newTypeClass), assocType, NodeFactory.getQName(NodeFactory.getNamespace(newTypeClass), nodeName), parent.getNodeRef(), service, properties);
+//        }
+//        
+//        public NodeCreatorImpl(Class<T> newTypeClass, QName assocType, String nodeNamespace, String nodeName, P parent, NodeService service, Map<QName, Serializable> properties){
+//            this(NodeFactory.getQNameFromClass(newTypeClass), assocType, NodeFactory.getQName(nodeNamespace, nodeName), parent.getNodeRef(), service, properties);
+//        }
+//        
+//        protected NodeCreatorImpl(QName newNodeType, QName assocType, QName nodeName, NodeRef parent, NodeService service, Map<QName, Serializable> properties) {
+//            this.parentRef = parent;
+//            this.newNodeType = newNodeType;
+//            this.assocType = assocType;
+//            this.nodeName = nodeName;
+//            this.service = service;
+//            this.properties = properties;
+//        }
+//        
+//        @Override
+//        public T create(){   
+//            ChildAssociationRef ref = service.createNode(parentRef, assocType, nodeName, newNodeType, properties);
+//            nodeFactory.createNode(ref.getChildRef());
+//        }
+//    }
 }

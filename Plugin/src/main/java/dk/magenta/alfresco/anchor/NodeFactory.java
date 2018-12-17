@@ -17,18 +17,21 @@ import org.alfresco.service.cmr.repository.NodeRef;
 import org.alfresco.service.cmr.repository.NodeService;
 import org.alfresco.service.cmr.repository.StoreRef;
 import org.alfresco.service.namespace.QName;
+import org.springframework.context.ApplicationContext;
+import org.springframework.web.context.ContextLoader;
+import org.springframework.web.context.WebApplicationContext;
 
 /**
  *
  * @author martin
  */
 public class NodeFactory {
+
     public static String COULD_NOT_FIND_CLASS = "generated.code.cnf";
     public static final String ASPECT_POSTFIX = "Class";
-    
-    
+
     private ServiceRegistry serviceRegistry;
-    
+
     protected ServiceRegistry getServiceRegistry() {
         return serviceRegistry;
         //return getApplicationContext().getBean(ServiceRegistry.class);
@@ -42,22 +45,27 @@ public class NodeFactory {
         return getServiceRegistry().getNodeService();
         //return getApplicationContext().getBean("nodeService", NodeService.class);
     }
-    
-    public List<StoreRef> getStores(){
+
+    public List<StoreRef> getStores() {
         return getNodeService().getStores();
-    }
-    
-    protected Object newType(NodeRef ref) {
-        QName nodeType = getNodeService().getType(ref);
-        return getNode(nodeType, ref);
     }
 
     protected String getPackageName(QName qName) {
         return getPackage(qName.getNamespaceURI());
     }
-    
-    public NodeBase getNode(QName name, NodeRef ref) {
+
+    public <T extends NodeBase> T getNode(NodeRef nodeRef, Class<T> type) {
         try {
+            T node = type.cast(getNode(nodeRef));
+            return node;
+        } catch (RuntimeException ex) {
+            throw new AlfrescoRuntimeException(COULD_NOT_FIND_CLASS, ex);
+        }
+    }
+
+    public NodeBase getNode(NodeRef ref) {
+        try {
+            QName name = serviceRegistry.getNodeService().getType(ref);
             String fqcn = getPackage(name.getNamespaceURI()) + "." + capitalize(name.getLocalName());
             Class toBuild = Class.forName(fqcn);
             NodeBase newNode = (NodeBase) toBuild.newInstance();
@@ -69,16 +77,10 @@ public class NodeFactory {
             throw new AlfrescoRuntimeException(COULD_NOT_FIND_CLASS, ex);
         }
     }
-    
-    public <T extends NodeBase> T getNode(Class<T> type, NodeRef ref){
-        Name name = type.getAnnotation(Name.class);
-        QName typeQname = QName.createQName(name.namespace(), name.localName());
-        return (T)getNode(typeQname, ref);
-    }
 
     public Object newAspect(QName name, NodeRef owningNodeRef) {
         try {
-            String fqcn = getPackage(name.getNamespaceURI()) + "." + capitalize(name.getLocalName())+ASPECT_POSTFIX;
+            String fqcn = getPackage(name.getNamespaceURI()) + "." + capitalize(name.getLocalName()) + ASPECT_POSTFIX;
             Class toBuild = Class.forName(fqcn);
             NodeBase newAspect = (NodeBase) toBuild.newInstance();
             newAspect.setNodeRef(owningNodeRef);
@@ -89,17 +91,7 @@ public class NodeFactory {
             throw new AlfrescoRuntimeException(COULD_NOT_FIND_CLASS, ex);
         }
     }
-    
-    public <T> T getNode(NodeRef nodeRef, Class<T> type) {
-        try {
-            QName typeQName = getNodeService().getType(nodeRef);
-            T node = (T) getNode(typeQName, nodeRef);
-            return node;
-        } catch (RuntimeException ex) {
-            throw new AlfrescoRuntimeException(COULD_NOT_FIND_CLASS, ex);
-        }
-    }
-    
+
     public static String getPackage(String namespaceURI) {
         List<String> packagePrefixes = Arrays.asList(NodeBase.class.getPackage().getName().split("\\."));
         return getPackage(getPackages(packagePrefixes, namespaceURI));
@@ -149,7 +141,7 @@ public class NodeFactory {
         }
         return packageString;
     }
-    
+
     public static String capitalize(String toCapitalize) {
         return toCapitalize.substring(0, 1).toUpperCase() + toCapitalize.substring(1);
     }
@@ -160,7 +152,31 @@ public class NodeFactory {
 
     public static String capitalizeAndSanitize(String toHandle) {
         return capitalize(sanitize(toHandle));
-
     }
     
+    public static String getNamespace(Class<? extends NodeBase> clazz){
+        Name annotation = clazz.getAnnotation(Name.class);
+        return annotation.namespace();
+    }
+    
+    public static QName getQNameFromClass(Class<? extends NodeBase> clazz){
+        Name annotation = clazz.getAnnotation(Name.class);
+        return getQName(annotation.namespace(), annotation.localName());
+    }
+    
+    public static QName getQName(String namespace, String localName){
+        return QName.createQName(namespace, localName);
+    }
+
+    protected static NodeFactory getFactoryFromCurrentContext() {
+        WebApplicationContext context = ContextLoader.getCurrentWebApplicationContext();
+        if (context == null) {
+            throw new RuntimeException("Could not find an ApplicationContext");
+        }
+        ServiceRegistry registry = context.getBean(ServiceRegistry.class);
+        NodeFactory factory = new NodeFactory();
+        factory.setServiceRegistry(registry);
+        return factory;
+    }
+
 }
