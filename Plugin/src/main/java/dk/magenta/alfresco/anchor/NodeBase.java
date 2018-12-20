@@ -130,6 +130,10 @@ public class NodeBase {
         getNodeService().setProperty(nodeRef, qName, value);
     }
     
+    protected <C extends NodeBase> void createChild(QName associationName, Class<C> childClass, NodeFactory.AbstractNodeConfiguration propertiesFactory){
+        factory.createChildNode(this, associationName, childClass, propertiesFactory);
+    }
+    
     public static enum Store {
         USER_STORE("user", "alfrescoUserStore"), SYSTEM("system","system"), LIGHTWEIGHT_VERSION_STORE("workspace", "lightWeightVersionStore"), VERSION_2_STORE("workspace","version2Store"), 
         ARCHIVE("archive","SpacesStore"), WORKSPACE("workspace","SpacesStore");
@@ -143,7 +147,11 @@ public class NodeBase {
         }
     }
     
-//    public static abstract class PropertiesProxy{
+    public static interface PropertiesFactory<E extends NodeFactory.AbstractNodeConfiguration>{
+        public void createProperties(E configuration);   
+    }
+    
+//    public static abstract class AbstractPropertiesFactory{
 //        private Map<QName, Serializable> properties = new HashMap<>();
 //       
 //        
@@ -183,36 +191,91 @@ public class NodeBase {
 //        public T create();
 //    }
 //    
-//    public static class NodeCreatorImpl<T extends NodeBase, P extends NodeBase> implements NodeCreator<T, P>{
-//        private final NodeRef parentRef;
-//        private final NodeService service;
-//        private final QName newNodeType;
+//    public static class NodeCreatorImpl<C extends NodeBase, P extends NodeBase> implements NodeCreator<C, P>{
+//        private final P parent;
+//        private final NodeFactory factory;
+//        private final Class<C> newNodeType;
 //        private final QName assocType;
 //        private final QName nodeName;
 //        private final Map<QName, Serializable> properties;
 //        
 //        
-//        public NodeCreatorImpl(Class<T> newTypeClass, QName assocType, String nodeName, P parent, NodeService service, Map<QName, Serializable> properties){
-//            this(NodeFactory.getQNameFromClass(newTypeClass), assocType, NodeFactory.getQName(NodeFactory.getNamespace(newTypeClass), nodeName), parent.getNodeRef(), service, properties);
+//        public NodeCreatorImpl(Class<C> newTypeClass, QName assocType, String nodeName, P parent, NodeFactory factory, Map<QName, Serializable> properties){
+//            this(newTypeClass, assocType, NodeFactory.getQName(NodeFactory.getNamespace(newTypeClass), nodeName), parent, factory, properties);
 //        }
 //        
-//        public NodeCreatorImpl(Class<T> newTypeClass, QName assocType, String nodeNamespace, String nodeName, P parent, NodeService service, Map<QName, Serializable> properties){
-//            this(NodeFactory.getQNameFromClass(newTypeClass), assocType, NodeFactory.getQName(nodeNamespace, nodeName), parent.getNodeRef(), service, properties);
+//        public NodeCreatorImpl(Class<C> newTypeClass, QName assocType, String nodeNamespace, String nodeName, P parent, NodeFactory factory, Map<QName, Serializable> properties){
+//            this(newTypeClass, assocType, NodeFactory.getQName(nodeNamespace, nodeName), parent, factory, properties);
 //        }
 //        
-//        protected NodeCreatorImpl(QName newNodeType, QName assocType, QName nodeName, NodeRef parent, NodeService service, Map<QName, Serializable> properties) {
-//            this.parentRef = parent;
+//        protected NodeCreatorImpl(Class<C> newNodeType, QName assocType, QName nodeName, P parent, NodeFactory factory, Map<QName, Serializable> properties) {
+//            this.parent = parent;
 //            this.newNodeType = newNodeType;
 //            this.assocType = assocType;
 //            this.nodeName = nodeName;
-//            this.service = service;
+//            this.factory = factory;
 //            this.properties = properties;
 //        }
 //        
 //        @Override
-//        public T create(){   
-//            ChildAssociationRef ref = service.createNode(parentRef, assocType, nodeName, newNodeType, properties);
-//            nodeFactory.createNode(ref.getChildRef());
+//        public C create(){   
+//            return factory.createChildNode(parent, assocType, nodeName, newNodeType, properties);
 //        }
+//    }
+//    
+//    public static abstract class NodeBuilder<C extends NodeBase, P extends NodeBase>{
+//        private P parent;
+//        private NodeFactory factory;
+//        private Class<C> newNodeType;
+//        private QName assocType;
+//        private QName nodeName;
+//        private final Map<QName, Serializable> properties;
+//
+//        public NodeBuilder(Map<QName, Serializable> properties) {
+//            this.properties = properties;
+//        }
+//
+//        public P getParent() {
+//            return parent;
+//        }
+//
+//        void setParent(P parent) {
+//            this.parent = parent;
+//        }
+//
+//        public NodeFactory getFactory() {
+//            return factory;
+//        }
+//
+//        void setFactory(NodeFactory factory) {
+//            this.factory = factory;
+//        }
+//
+//        public Class<C> getNewNodeType() {
+//            return newNodeType;
+//        }
+//
+//        void setNewNodeType(Class<C> newNodeType) {
+//            this.newNodeType = newNodeType;
+//        }
+//
+//        public QName getAssocType() {
+//            return assocType;
+//        }
+//
+//        void setAssocType(QName assocType) {
+//            this.assocType = assocType;
+//        }
+//
+//        public QName getNodeName() {
+//            return nodeName;
+//        }
+//
+//        void setNodeName(QName nodeName) {
+//            this.nodeName = nodeName;
+//        }
+//        
+//        
+//        
 //    }
 }

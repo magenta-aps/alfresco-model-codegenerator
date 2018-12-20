@@ -94,6 +94,9 @@ public class DOMModuleParser {
     public static final String ASSOCIATION_ROLE_TAG = "role";
 
     public static final String TITLE_TAG = "title";
+    
+    public static final String GETTER_POSTFIX = "Getter";
+    public static final String SETTER_POSTFIX = "Setter";
 
     private final Log log;
     private final List<String> packagePrefixes;
@@ -194,14 +197,16 @@ public class DOMModuleParser {
             String packageName = getPackageFromFqcn(fqcn);
             TypeSpec.Builder aspect = typeContainer.getInterfaceBuilder();
             TypeSpec.Builder implementation = typeContainer.getClassBuilder();
-
             if (aspect != null) {
                 JavaFile aspectFile = JavaFile.builder(packageName, aspect.build()).build();
                 aspectFile.writeTo(new File(sourceDir));
 
             }
-
-            JavaFile implFile = JavaFile.builder(packageName, implementation.build()).build();
+            JavaFile implFile = JavaFile.builder(packageName, implementation
+                    .addType(typeContainer.getGetterBuilder().build())
+                    .addType(typeContainer.getSetterBuilder().build())
+                .build())
+            .build();
             implFile.writeTo(new File(sourceDir));
         }
     }
@@ -258,7 +263,15 @@ public class DOMModuleParser {
                 String packageName = NodeFactory.getPackage(javaTypePackages);
                 ClassName clazz = ClassName.get(packageName, NodeFactory.capitalize(typeQName.getLocalName()+getPostfix(typeQName)));
                 TypeSpec.Builder javaClassBuilder = TypeSpec.classBuilder(clazz).addModifiers(Modifier.PUBLIC);
-
+                TypeSpec.Builder setterBuilder = TypeSpec.classBuilder(ClassName.get(packageName, NodeFactory.capitalize(typeQName.getLocalName()+getPostfix(typeQName)), SETTER_POSTFIX)).addModifiers(Modifier.PUBLIC, Modifier.STATIC);
+                TypeSpec.Builder getterBuilder = TypeSpec.classBuilder(ClassName.get(packageName, NodeFactory.capitalize(typeQName.getLocalName()+getPostfix(typeQName)), GETTER_POSTFIX)).addModifiers(Modifier.PUBLIC, Modifier.STATIC);
+                
+                TypeContainer container = new TypeContainer(null, javaClassBuilder, setterBuilder, getterBuilder);
+                TypeContainer prev = fqcnToTypes.put(getFqcn(packageName, clazz.simpleName()), container);
+                if(prev != null){
+                    log.error("Found an already existing type: "+getFqcn(packageName, clazz.simpleName())+"\n"+prev);
+                }
+                
                 //Add any methods created by parsing other types, such as bidirectional association methods
                 MethodContainer externalMethods = methodsForClass.remove((getFqcn(packageName, clazz.simpleName())));
                 if (externalMethods != null) {
@@ -287,13 +300,13 @@ public class DOMModuleParser {
                                 parent = classNameFromQName(getQName(getNodeValue(typeChild)));
                                 break;
                             case PROPERTIES_TAG:
-                                addProperties(null, javaClassBuilder, typeChild.getChildNodes());
+                                addProperties(container, typeChild.getChildNodes());
                                 break;
                             case ASSOCIATIONS_TAG:
-                                addAssociations(null, javaClassBuilder, clazz, typeChild.getChildNodes());
+                                addAssociations(container, clazz, typeChild.getChildNodes());
                                 break;
                             case MANDATORY_ASPECTS_TAG:
-                                addMandatoryAspects(null, javaClassBuilder, typeChild.getChildNodes());
+                                addMandatoryAspects(container, typeChild.getChildNodes());
                                 break;
                             default:
                                 log.debug("Unexpected tag inside type " + nodeToString(typeChild));
@@ -305,11 +318,7 @@ public class DOMModuleParser {
                 }
                 javaClassBuilder.superclass(parent);
                 javaClassBuilder.addAnnotation(AnnotationSpec.builder(nameClass).addMember("namespace", "$S", typeQName.getNamespaceURI()).addMember("localName", "$S", typeQName.getLocalName()).build());
-                TypeContainer container = new TypeContainer(null, javaClassBuilder);
-                TypeContainer prev = fqcnToTypes.put(getFqcn(packageName, clazz.simpleName()), container);
-                if(prev != null){
-                    log.error("Danger Will Robinson!: "+getFqcn(packageName, clazz.simpleName())+"\n"+prev);
-                }
+                
                 
 
 //                javaClassBuilder.superclass(parent);
@@ -332,6 +341,11 @@ public class DOMModuleParser {
                 ClassName aspectImplClass = ClassName.get(packageName, className + NodeFactory.ASPECT_POSTFIX+getPostfix(aspectName));
                 TypeSpec.Builder javaInterfaceBuilder = TypeSpec.interfaceBuilder(aspectClass).addModifiers(Modifier.PUBLIC);
                 TypeSpec.Builder javaClassBuilder = TypeSpec.classBuilder(aspectImplClass).addModifiers(Modifier.PUBLIC);
+                TypeSpec.Builder setterBuilder = TypeSpec.classBuilder(ClassName.get(packageName, className+getPostfix(aspectName), SETTER_POSTFIX)).addModifiers(Modifier.PUBLIC, Modifier.STATIC);
+                TypeSpec.Builder getterBuilder = TypeSpec.classBuilder(ClassName.get(packageName, className+getPostfix(aspectName), GETTER_POSTFIX)).addModifiers(Modifier.PUBLIC, Modifier.STATIC);
+                
+                TypeContainer container = new TypeContainer(javaInterfaceBuilder, javaClassBuilder, setterBuilder, getterBuilder);
+                fqcnToTypes.put(getFqcn(packageName, aspectClass.simpleName()), container);
 
                 //Add any methods created by parsing other types, such as bidirectional association methods
                 MethodContainer externalMethods = methodsForClass.remove((getFqcn(packageName, aspectClass.simpleName())));
@@ -373,13 +387,13 @@ public class DOMModuleParser {
                                 }
                                 break;
                             case PROPERTIES_TAG:
-                                addProperties(javaInterfaceBuilder, javaClassBuilder, aspectChild.getChildNodes());
+                                addProperties(container, aspectChild.getChildNodes());
                                 break;
                             case ASSOCIATIONS_TAG:
-                                addAssociations(javaInterfaceBuilder, javaClassBuilder, aspectClass, aspectChild.getChildNodes());
+                                addAssociations(container, aspectClass, aspectChild.getChildNodes());
                                 break;
                             case MANDATORY_ASPECTS_TAG:
-                                addMandatoryAspects(javaInterfaceBuilder, javaClassBuilder, aspectChild.getChildNodes());
+                                addMandatoryAspects(container, aspectChild.getChildNodes());
                                 break;
                             default:
                                 log.debug("Unexpected tag inside aspect " + nodeToString(aspectChild));
@@ -400,8 +414,7 @@ public class DOMModuleParser {
                 javaInterfaceBuilder.addAnnotation(AnnotationSpec.builder(nameClass).addMember("namespace", "$S", aspectName.getNamespaceURI()).addMember("localName", "$S", aspectName.getLocalName()).build());
                 javaClassBuilder.addAnnotation(AnnotationSpec.builder(nameClass).addMember("namespace", "$S", aspectName.getNamespaceURI()).addMember("localName", "$S", aspectName.getLocalName()).build());
 
-                TypeContainer container = new TypeContainer(javaInterfaceBuilder, javaClassBuilder);
-                fqcnToTypes.put(getFqcn(packageName, aspectClass.simpleName()), container);
+                
 
             } else {
                 log.warn("Unexpected node in aspects: " + nodeToString(aspectNode));
@@ -409,7 +422,7 @@ public class DOMModuleParser {
         }
     }
 
-    protected void addProperties(TypeSpec.Builder interfaceBuilder, TypeSpec.Builder classBuilder, NodeList properties) {
+    protected void addProperties(TypeContainer types, NodeList properties) {
         for (int propertyIndex = 0; propertyIndex < properties.getLength(); propertyIndex++) {
             Node propertyNode = properties.item(propertyIndex);
             if (matches(propertyNode, DICTIONARY_URI, PROPERTY_TAG)) {
@@ -465,19 +478,19 @@ public class DOMModuleParser {
                         
                     MethodSpec.Builder getterMethod = MethodSpec.methodBuilder("get" + methodName).addModifiers(Modifier.PUBLIC).returns(methodReturnType);
                     MethodSpec.Builder setterMethod = MethodSpec.methodBuilder("set" + methodName).addModifiers(Modifier.PUBLIC).addParameter(methodReturnType, setterParameterName);
-                    if (interfaceBuilder != null) {
-                        interfaceBuilder.addMethod(getterMethod.build().toBuilder().addModifiers(Modifier.ABSTRACT).build());
-                        interfaceBuilder.addMethod(setterMethod.build().toBuilder().addModifiers(Modifier.ABSTRACT).build());
+                    if (types.getInterfaceBuilder() != null) {
+                        types.getInterfaceBuilder().addMethod(getterMethod.build().toBuilder().addModifiers(Modifier.ABSTRACT).build());
+                        types.getInterfaceBuilder().addMethod(setterMethod.build().toBuilder().addModifiers(Modifier.ABSTRACT).build());
                     }
-                    classBuilder.addField(FieldSpec.builder(QName.class, propertyFieldName, Modifier.PUBLIC, Modifier.FINAL, Modifier.STATIC).initializer("$T.createQName($S, $S)", QName.class, classQName.getNamespaceURI(), classQName.getLocalName()).build());
+                    types.getClassBuilder().addField(FieldSpec.builder(QName.class, propertyFieldName, Modifier.PUBLIC, Modifier.FINAL, Modifier.STATIC).initializer("$T.createQName($S, $S)", QName.class, classQName.getNamespaceURI(), classQName.getLocalName()).build());
                     getterMethod.addCode("$[return ($T)getNodeService().getProperty(getNodeRef(), $L)$];\n", methodReturnType, propertyFieldName);
                     setterMethod.addCode(setterMethodCode);
-                    if (interfaceBuilder != null) {
+                    if (types.getInterfaceBuilder() != null) {
                         getterMethod.addAnnotation(Override.class);
                         setterMethod.addAnnotation(Override.class);
                     }
-                    classBuilder.addMethod(getterMethod.build());
-                    classBuilder.addMethod(setterMethod.build());
+                    types.getClassBuilder().addMethod(getterMethod.build());
+                    types.getClassBuilder().addMethod(setterMethod.build());
                 } catch (Exception ex) {
                     throw new RuntimeException("Failed to parse property:\n" + nodeToString(propertyNode), ex);//Do something less runtime
                 }
@@ -488,7 +501,7 @@ public class DOMModuleParser {
         }
     }
 
-    protected void addAssociations(TypeSpec.Builder interfaceBuilder, TypeSpec.Builder classBuilder, ClassName sourceType, NodeList associations) {
+    protected void addAssociations(TypeContainer types, ClassName sourceType, NodeList associations) {
         for (int assocIndex = 0; assocIndex < associations.getLength(); assocIndex++) {
             Node associationNode = associations.item(assocIndex);
             if (matches(associationNode, DICTIONARY_URI, ASSOCIATION_TAG) || matches(associationNode, DICTIONARY_URI, CHILD_ASSOCIATION_TAG)) {
@@ -527,30 +540,30 @@ public class DOMModuleParser {
                 //Create towards-target methods
                 ClassName targetClass = target.getType();
                 targetClass = ClassName.get(targetClass.packageName(), targetClass.simpleName()+getPostfix(target.targetQName));
-                addOutboundMethod(interfaceBuilder, classBuilder, associationName, target.isMany(), targetClass, isChild);
+                addOutboundMethod(types, associationName, target.isMany(), targetClass, isChild);
 
                 String targetFQCN = getFqcn(targetClass.packageName(), targetClass.simpleName());
-                TypeContainer container = fqcnToTypes.get(targetFQCN);
-                if (container != null) {
+                TypeContainer otherClassContainer = fqcnToTypes.get(targetFQCN);
+                if (otherClassContainer != null) {
                     MethodSpec.Builder inboundMethod = getInboundMethod(associationName, source.isMany(), sourceType, isChild);
-                    if (container.getInterfaceBuilder() != null) {
+                    if (otherClassContainer.getInterfaceBuilder() != null) {
                         
-                        container.getInterfaceBuilder().addMethod(inboundMethod.build().toBuilder().addModifiers(Modifier.ABSTRACT).build());
+                        otherClassContainer.getInterfaceBuilder().addMethod(inboundMethod.build().toBuilder().addModifiers(Modifier.ABSTRACT).build());
                     }
 
-                    FieldSpec.Builder inboundField = getInputMethodField(container.getInterfaceBuilder(), container.getClassBuilder(), inboundMethod, associationName, source.isMany(), sourceType, isChild);
-                    decorateInboundMethod(container.getInterfaceBuilder(), container.getClassBuilder(), inboundMethod, associationName, source.isMany(), sourceType, isChild);
-                    container.getClassBuilder().addField(inboundField.build());
-                    container.getClassBuilder().addMethod(inboundMethod.build());
+                    FieldSpec.Builder inboundField = getInputMethodField(otherClassContainer, inboundMethod, associationName, source.isMany(), sourceType, isChild);
+                    decorateInboundMethod(otherClassContainer, inboundMethod, associationName, source.isMany(), sourceType, isChild);
+                    otherClassContainer.getClassBuilder().addField(inboundField.build());
+                    otherClassContainer.getClassBuilder().addMethod(inboundMethod.build());
                 } else {
                     MethodContainer externalMethods = new MethodContainer();
                     MethodSpec.Builder inboundMethod = getInboundMethod(associationName, source.isMany(), sourceType, isChild);
-                    if (interfaceBuilder != null) {                       
+                    if (types.getInterfaceBuilder() != null) {                       
                         externalMethods.addInterfaceMethod(inboundMethod.build().toBuilder().addModifiers(Modifier.ABSTRACT));
                     }
 
-                    FieldSpec.Builder inboundField = getInputMethodField(interfaceBuilder, classBuilder, inboundMethod, associationName, source.isMany(), sourceType, isChild);
-                    decorateInboundMethod(interfaceBuilder, classBuilder, inboundMethod, associationName, source.isMany(), sourceType, isChild);
+                    FieldSpec.Builder inboundField = getInputMethodField(types, inboundMethod, associationName, source.isMany(), sourceType, isChild);
+                    decorateInboundMethod(types, inboundMethod, associationName, source.isMany(), sourceType, isChild);
                     externalMethods.addClassField(inboundField);
                     externalMethods.addClassMethod(inboundMethod);
                 }
@@ -563,7 +576,7 @@ public class DOMModuleParser {
         return MethodSpec.methodBuilder(name).returns(returnType).addModifiers(Modifier.PUBLIC);
     }
 
-    private void addOutboundMethod(TypeSpec.Builder interfaceBuilder, TypeSpec.Builder classBuilder, QName assocName, boolean many, ClassName targetClass, boolean isChild) {
+    private void addOutboundMethod(TypeContainer types, QName assocName, boolean many, ClassName targetClass, boolean isChild) {
         ClassName list = ClassName.get("java.util", "List");
         String methodName = "get" + NodeFactory.capitalizeAndSanitize(assocName.getLocalName()) + /*getPostfix(assocName) + */(isChild ? "Child" : "Target");
         String associationFieldName = NodeFactory.sanitize(assocName.getLocalName() +getPostfix(assocName) + (isChild ? "Child" : "Target") + "Association");
@@ -579,11 +592,11 @@ public class DOMModuleParser {
 
         FieldSpec.Builder field = FieldSpec.builder(QName.class, associationFieldName, Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL).initializer("$T.createQName($S, $S)", QName.class, assocName.getNamespaceURI(), assocName.getLocalName());
         MethodSpec.Builder method = createMethodBuilder(methodName, returnType).addModifiers(Modifier.ABSTRACT);
-        if (interfaceBuilder != null) {
-            interfaceBuilder.addMethod(method.build());
+        if (types.getInterfaceBuilder() != null) {
+            types.getInterfaceBuilder().addMethod(method.build());
         }
         method = createMethodBuilder(methodName, returnType);
-        if (interfaceBuilder != null) {
+        if (types.getInterfaceBuilder() != null) {
             method.addAnnotation(Override.class);
         }
         if (isChild) {
@@ -600,8 +613,8 @@ public class DOMModuleParser {
             }
         }
 
-        classBuilder.addField(field.build());
-        classBuilder.addMethod(method.build());
+        types.getClassBuilder().addField(field.build());
+        types.getClassBuilder().addMethod(method.build());
 
     }
 
@@ -620,18 +633,18 @@ public class DOMModuleParser {
         return method;
     }
 
-    private FieldSpec.Builder getInputMethodField(TypeSpec.Builder interfaceBuilder, TypeSpec.Builder classBuilder, MethodSpec.Builder method, QName assocName, boolean many, ClassName targetClass, boolean isChild) {
+    private FieldSpec.Builder getInputMethodField(TypeContainer types, MethodSpec.Builder method, QName assocName, boolean many, ClassName targetClass, boolean isChild) {
         String associationFieldName = NodeFactory.sanitize(assocName.getLocalName() + targetClass.simpleName() + getPostfix(assocName) + (isChild ? "Parent" : "Source") + "Association");
         FieldSpec.Builder field = FieldSpec.builder(QName.class, associationFieldName, Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL).initializer("$T.createQName($S, $S)", QName.class, assocName.getNamespaceURI(), assocName.getLocalName()).addJavadoc("Originates at $L", targetClass.toString());
         return field;
     }
 
-    private MethodSpec.Builder decorateInboundMethod(TypeSpec.Builder interfaceBuilder, TypeSpec.Builder classBuilder, MethodSpec.Builder method, QName assocName, boolean many, ClassName targetClass, boolean isChild) {
+    private MethodSpec.Builder decorateInboundMethod(TypeContainer types, MethodSpec.Builder method, QName assocName, boolean many, ClassName targetClass, boolean isChild) {
         ClassName list = ClassName.get("java.util", "List");
         String associationFieldName = NodeFactory.sanitize(assocName.getLocalName() + targetClass.simpleName() + getPostfix(assocName) + (isChild ? "Parent" : "Source") + "Association");
         TypeName listOfType = ParameterizedTypeName.get(list, targetClass);
 
-        if (interfaceBuilder != null) {
+        if (types.getInterfaceBuilder() != null) {
             method.addAnnotation(Override.class);
         }
 
@@ -732,19 +745,19 @@ public class DOMModuleParser {
         return toReturn;
     }
 
-    protected void addMandatoryAspects(TypeSpec.Builder interfaceBuilder, TypeSpec.Builder classBuilder, NodeList mandatoryAspects) {
+    protected void addMandatoryAspects(TypeContainer types, NodeList mandatoryAspects) {
         for (int aspectIndex = 0; aspectIndex < mandatoryAspects.getLength(); aspectIndex++) {
             Node aspectNode = mandatoryAspects.item(aspectIndex);
             if (matches(aspectNode, DICTIONARY_URI, ASPECT_TAG)) {
                 QName classQName = getQName(getNodeValue(aspectNode));
                 TypeName type = classNameFromQName(classQName);
                 MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder("get" + NodeFactory.capitalizeAndSanitize(classQName.getLocalName()) + "Aspect").returns(type).addModifiers(Modifier.PUBLIC);
-                if (interfaceBuilder != null) {
-                    interfaceBuilder.addMethod(methodBuilder.build().toBuilder().addModifiers(Modifier.ABSTRACT).build());
-                    classBuilder.addMethod(methodBuilder.addCode("return getAspect($T.class);\n", type).build());
+                if (types.getInterfaceBuilder() != null) {
+                    types.getInterfaceBuilder().addMethod(methodBuilder.build().toBuilder().addModifiers(Modifier.ABSTRACT).build());
+                    types.getClassBuilder().addMethod(methodBuilder.addCode("return getAspect($T.class);\n", type).build());
 
                 } else {
-                    classBuilder.addMethod(methodBuilder.addCode("return getAspect($T.class);\n", type).build());
+                    types.getClassBuilder().addMethod(methodBuilder.addCode("return getAspect($T.class);\n", type).build());
 
                 }
             } else {
@@ -1031,87 +1044,7 @@ public class DOMModuleParser {
 
     }
 
-    private static class TypeContainer {
 
-        private TypeSpec.Builder interfaceBuilder;
-        private TypeSpec.Builder classBuilder;
-
-        public TypeContainer() {
-        }
-
-        public TypeContainer(TypeSpec.Builder interfaceBuilder, TypeSpec.Builder classBuilder) {
-            this.interfaceBuilder = interfaceBuilder;
-            this.classBuilder = classBuilder;
-        }
-
-        public TypeSpec.Builder getInterfaceBuilder() {
-            return interfaceBuilder;
-        }
-
-        public void setInterfaceBuilder(TypeSpec.Builder interfaceBuilder) {
-            this.interfaceBuilder = interfaceBuilder;
-        }
-
-        public TypeSpec.Builder getClassBuilder() {
-            return classBuilder;
-        }
-
-        public void setClassBuilder(TypeSpec.Builder classBuilder) {
-            this.classBuilder = classBuilder;
-        }
-
-        @Override
-        public String toString() {
-            return "TypeContainer{" + "interfaceBuilder=" + interfaceBuilder + ", classBuilder=" + classBuilder + '}';
-        }
-        
-        
-
-    }
-
-    private static class MethodContainer {
-
-        private List<MethodSpec.Builder> interfaceMethods = new ArrayList<>();
-        private List<MethodSpec.Builder> classMethods = new ArrayList<>();
-        private List<FieldSpec.Builder> interfaceFields = new ArrayList<>();
-        private List<FieldSpec.Builder> classFields = new ArrayList<>();
-
-        public MethodContainer() {
-        }
-
-        public void addInterfaceMethod(MethodSpec.Builder method) {
-            interfaceMethods.add(method);
-        }
-
-        public void addClassMethod(MethodSpec.Builder method) {
-            classMethods.add(method);
-        }
-
-        public void addInterfaceField(FieldSpec.Builder method) {
-            interfaceFields.add(method);
-        }
-
-        public void addClassField(FieldSpec.Builder method) {
-            classFields.add(method);
-        }
-
-        public List<MethodSpec.Builder> getInterfaceMethods() {
-            return interfaceMethods;
-        }
-
-        public List<MethodSpec.Builder> getClassMethods() {
-            return classMethods;
-        }
-
-        public List<FieldSpec.Builder> getInterfaceFields() {
-            return interfaceFields;
-        }
-
-        public List<FieldSpec.Builder> getClassFields() {
-            return classFields;
-        }
-
-    }
 
     
 }

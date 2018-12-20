@@ -5,19 +5,22 @@
  */
 package dk.magenta.alfresco.anchor;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Scanner;
+import java.util.UUID;
 import java.util.regex.Pattern;
 import org.alfresco.error.AlfrescoRuntimeException;
 import org.alfresco.service.ServiceRegistry;
+import org.alfresco.service.cmr.repository.ChildAssociationRef;
 import org.alfresco.service.cmr.repository.NodeRef;
 import org.alfresco.service.cmr.repository.NodeService;
 import org.alfresco.service.cmr.repository.StoreRef;
 import org.alfresco.service.namespace.QName;
-import org.springframework.context.ApplicationContext;
 import org.springframework.web.context.ContextLoader;
 import org.springframework.web.context.WebApplicationContext;
 
@@ -92,6 +95,26 @@ public class NodeFactory {
         }
     }
 
+    public <P extends NodeBase, C extends NodeBase> C createChildNode(P parent, QName associationType, QName childName, Class<C> childClass) {
+        Map<QName, Serializable> properties = null;
+        return createChildNode(parent, associationType, childName, childClass, properties);
+    }
+
+    public <P extends NodeBase, C extends NodeBase> C createChildNode(P parent, QName associationType, Class<C> childClass, AbstractNodeConfiguration properties) {
+        QName itemName = QName.createQName(getNamespace(childClass), UUID.randomUUID().toString());
+        if (properties != null) {
+            String namespace = properties.getNamespaceOverride() != null ? properties.getNamespaceOverride() : itemName.getNamespaceURI();
+            String localName = properties.getLocalnameOverride() != null ? properties.getLocalnameOverride() : itemName.getLocalName();
+            itemName = QName.createQName(namespace, localName);
+        }
+        return createChildNode(parent, associationType, itemName, childClass, properties != null ? properties.getProperties() : null);
+    }
+
+    public <P extends NodeBase, C extends NodeBase> C createChildNode(P parent, QName associationType, QName childName, Class<C> childClass, Map<QName, Serializable> properties) {
+        ChildAssociationRef childRef = serviceRegistry.getNodeService().createNode(parent.getNodeRef(), associationType, childName, getQNameFromClass(childClass), properties);
+        return getNode(childRef.getChildRef(), childClass);
+    }
+
     public static String getPackage(String namespaceURI) {
         List<String> packagePrefixes = Arrays.asList(NodeBase.class.getPackage().getName().split("\\."));
         return getPackage(getPackages(packagePrefixes, namespaceURI));
@@ -153,18 +176,18 @@ public class NodeFactory {
     public static String capitalizeAndSanitize(String toHandle) {
         return capitalize(sanitize(toHandle));
     }
-    
-    public static String getNamespace(Class<? extends NodeBase> clazz){
+
+    public static String getNamespace(Class<? extends NodeBase> clazz) {
         Name annotation = clazz.getAnnotation(Name.class);
         return annotation.namespace();
     }
-    
-    public static QName getQNameFromClass(Class<? extends NodeBase> clazz){
+
+    public static QName getQNameFromClass(Class<? extends NodeBase> clazz) {
         Name annotation = clazz.getAnnotation(Name.class);
         return getQName(annotation.namespace(), annotation.localName());
     }
-    
-    public static QName getQName(String namespace, String localName){
+
+    public static QName getQName(String namespace, String localName) {
         return QName.createQName(namespace, localName);
     }
 
@@ -177,6 +200,34 @@ public class NodeFactory {
         NodeFactory factory = new NodeFactory();
         factory.setServiceRegistry(registry);
         return factory;
+    }
+
+    public static class AbstractNodeConfiguration {
+
+        private Map<QName, Serializable> properties;
+        private String namespaceOverride = null;
+        private String localnameOverride = null;
+
+        String getNamespaceOverride() {
+            return namespaceOverride;
+        }
+
+        public void setNamespace(String namespaceOverride) {
+            this.namespaceOverride = namespaceOverride;
+        }
+
+        String getLocalnameOverride() {
+            return localnameOverride;
+        }
+
+        public void setLocalname(String localnameOverride) {
+            this.localnameOverride = localnameOverride;
+        }
+
+        Map<QName, Serializable> getProperties() {
+            return properties;
+        }
+
     }
 
 }
